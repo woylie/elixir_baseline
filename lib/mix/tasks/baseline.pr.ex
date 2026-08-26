@@ -48,7 +48,8 @@ defmodule Mix.Tasks.Baseline.Pr do
   end
 
   defp line(:unchanged), do: "unchanged"
-  defp line(:up_to_date), do: "up to date"
+  defp line({:up_to_date, nil}), do: "up to date"
+  defp line({:up_to_date, url}), do: "up to date #{url}"
   defp line({:pull_request, url}), do: url
   defp line({:error, reason}), do: "error -- #{reason}"
 
@@ -93,7 +94,7 @@ defmodule Mix.Tasks.Baseline.Pr do
 
       remote_tree ->
         if remote_tree == git!(dir, ["rev-parse", "HEAD^{tree}"]) do
-          :up_to_date
+          {:up_to_date, open_pull_request(dir)}
         else
           force_push!(dir)
           {:pull_request, pull_request(dir)}
@@ -111,6 +112,17 @@ defmodule Mix.Tasks.Baseline.Pr do
   defp push!(dir, args) do
     IO.write("pushing... ")
     git!(dir, args)
+  end
+
+  defp open_pull_request(dir) do
+    args = ["pr", "list", "--head", @branch, "--json", "url"]
+
+    with {out, 0} <- System.cmd("gh", args, cd: dir, stderr_to_stdout: true),
+         {:ok, [%{"url" => url} | _]} <- JSON.decode(out) do
+      url
+    else
+      _ -> nil
+    end
   end
 
   defp pull_request(dir) do

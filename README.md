@@ -94,11 +94,11 @@ woylie/spek                   ok
 
 ```
 $ mix baseline.pr
-doggo: cloning... pushing... https://github.com/woylie/doggo/pull/319
-ecto_nested_changeset: cloning... up to date
-ex_icon: cloning... pushing... https://github.com/woylie/ex_icon/pull/24
-flop: cloning... pushing... https://github.com/woylie/flop/pull/712
-flop_phoenix: cloning... pushing... https://github.com/woylie/flop_phoenix/pull/468
+doggo: cloning... up to date https://github.com/woylie/doggo/pull/718
+ecto_nested_changeset: cloning... up to date https://github.com/woylie/ecto_nested_changeset/pull/457
+ex_icon: cloning... up to date https://github.com/woylie/ex_icon/pull/43
+flop: cloning... up to date https://github.com/woylie/flop/pull/717
+flop_phoenix: cloning... pushing... https://github.com/woylie/flop_phoenix/pull/469
 let_me: unchanged
 spek: unchanged
 ```
