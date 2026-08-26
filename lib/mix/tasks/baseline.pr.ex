@@ -32,16 +32,16 @@ defmodule Mix.Tasks.Baseline.Pr do
   def run(argv) do
     {opts, _} = OptionParser.parse!(argv, strict: @switches)
 
+    specs = Config.repos(Options.repos(opts))
+    if specs == [], do: Mix.raise("no configured repos matched")
+
     results =
-      for spec <- Config.repos(Options.repos(opts)) do
-        {spec.name, propose(spec)}
+      for spec <- specs do
+        IO.write("#{spec.name}: ")
+        outcome = propose(spec)
+        Mix.shell().info(line(outcome))
+        {spec.name, outcome}
       end
-
-    if results == [], do: Mix.raise("no configured repos matched")
-
-    Enum.each(results, fn {name, outcome} ->
-      Mix.shell().info("#{name}: #{line(outcome)}")
-    end)
 
     failed = for {name, {:error, _reason}} <- results, do: name
     if failed != [], do: Mix.raise("could not read #{Enum.join(failed, ", ")}")
@@ -64,11 +64,13 @@ defmodule Mix.Tasks.Baseline.Pr do
     dir = Path.join(System.tmp_dir!(), "baseline-#{spec.name}-#{unique()}")
 
     try do
+      IO.write("cloning... ")
       clone!(spec, dir)
       git!(dir, ["switch", "--quiet", "-c", @branch])
       File.write!(Path.join(dir, ".credo.exs"), Render.credo(spec))
       git!(dir, ["add", ".credo.exs"])
       git!(dir, ["commit", "--quiet", "-m", @message])
+      IO.write("pushing... ")
       publish(dir)
     after
       File.rm_rf!(dir)
