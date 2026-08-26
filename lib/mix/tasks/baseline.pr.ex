@@ -67,51 +67,34 @@ defmodule Mix.Tasks.Baseline.Pr do
     try do
       IO.write("cloning... ")
       clone!(spec, dir)
-      git!(dir, ["switch", "--quiet", "-c", @branch])
+      start_branch(dir)
       File.write!(Path.join(dir, ".credo.exs"), Render.credo(spec))
-      git!(dir, ["add", ".credo.exs"])
-      git!(dir, ["commit", "--quiet", "-m", @message])
       publish(dir)
     after
       File.rm_rf!(dir)
     end
   end
 
-  defp publish(dir) do
-    git(dir, [
-      "fetch",
-      "--quiet",
-      "--depth",
-      "1",
-      "origin",
-      "+refs/heads/#{@branch}:refs/remotes/origin/#{@branch}"
-    ])
+  defp start_branch(dir) do
+    refspec = "+refs/heads/#{@branch}:refs/remotes/origin/#{@branch}"
 
-    case git(dir, ["rev-parse", "origin/#{@branch}^{tree}"]) do
-      nil ->
-        push!(dir, ["push", "--quiet", "origin", @branch])
-        {:pull_request, pull_request(dir)}
-
-      remote_tree ->
-        if remote_tree == git!(dir, ["rev-parse", "HEAD^{tree}"]) do
-          {:up_to_date, open_pull_request(dir)}
-        else
-          force_push!(dir)
-          {:pull_request, pull_request(dir)}
-        end
+    if git(dir, ["fetch", "--quiet", "--depth", "1", "origin", refspec]) do
+      git!(dir, ["switch", "--quiet", "-c", @branch, "origin/#{@branch}"])
+    else
+      git!(dir, ["switch", "--quiet", "-c", @branch])
     end
   end
 
-  defp force_push!(dir) do
-    sha = git!(dir, ["rev-parse", "origin/#{@branch}"])
-    lease = "--force-with-lease=#{@branch}:#{sha}"
-
-    push!(dir, ["push", "--quiet", lease, "origin", @branch])
-  end
-
-  defp push!(dir, args) do
-    IO.write("pushing... ")
-    git!(dir, args)
+  defp publish(dir) do
+    if git!(dir, ["status", "--porcelain"]) == "" do
+      {:up_to_date, open_pull_request(dir)}
+    else
+      git!(dir, ["add", ".credo.exs"])
+      git!(dir, ["commit", "--quiet", "-m", @message])
+      IO.write("pushing... ")
+      git!(dir, ["push", "--quiet", "origin", @branch])
+      {:pull_request, pull_request(dir)}
+    end
   end
 
   defp open_pull_request(dir) do
