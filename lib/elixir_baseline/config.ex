@@ -1,16 +1,18 @@
 defmodule ElixirBaseline.Config do
   @moduledoc """
-  Reads `.baseline.exs` and resolves each repo's settings.
+  Reads `.baseline.override.exs`, or `.baseline.exs` where there is no override,
+  and resolves each repo's settings.
 
   Lookup order:
 
   - repo configuration
   - group configuration
   - "all" group configuration
-  - library defaults
+  - elixir_baseline's own defaults
   """
 
   @path ".baseline.exs"
+  @override ".baseline.override.exs"
   @defaults [all: [line_length: 80]]
 
   @doc """
@@ -18,7 +20,7 @@ defmodule ElixirBaseline.Config do
   """
   @spec repos(keyword) :: [map]
   def repos(opts \\ []) do
-    opts = Keyword.validate!(opts, path: @path, only: nil)
+    opts = Keyword.validate!(opts, path: default_path(), only: nil)
     only = Keyword.fetch!(opts, :only)
     {config, _} = opts |> Keyword.fetch!(:path) |> Code.eval_file()
     defaults = config[:defaults] || []
@@ -27,6 +29,10 @@ defmodule ElixirBaseline.Config do
     |> Keyword.fetch!(:repos)
     |> filter_repos(only)
     |> Enum.map(fn {name, spec} -> resolve(defaults, name, spec) end)
+  end
+
+  defp default_path do
+    if File.exists?(@override), do: @override, else: @path
   end
 
   defp filter_repos(repos, only) when is_list(only) do
