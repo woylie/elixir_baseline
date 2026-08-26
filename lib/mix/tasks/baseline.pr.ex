@@ -70,7 +70,6 @@ defmodule Mix.Tasks.Baseline.Pr do
       File.write!(Path.join(dir, ".credo.exs"), Render.credo(spec))
       git!(dir, ["add", ".credo.exs"])
       git!(dir, ["commit", "--quiet", "-m", @message])
-      IO.write("pushing... ")
       publish(dir)
     after
       File.rm_rf!(dir)
@@ -89,7 +88,7 @@ defmodule Mix.Tasks.Baseline.Pr do
 
     case git(dir, ["rev-parse", "origin/#{@branch}^{tree}"]) do
       nil ->
-        git!(dir, ["push", "--quiet", "origin", @branch])
+        push!(dir, ["push", "--quiet", "origin", @branch])
         {:pull_request, pull_request(dir)}
 
       remote_tree ->
@@ -106,7 +105,12 @@ defmodule Mix.Tasks.Baseline.Pr do
     sha = git!(dir, ["rev-parse", "origin/#{@branch}"])
     lease = "--force-with-lease=#{@branch}:#{sha}"
 
-    git!(dir, ["push", "--quiet", lease, "origin", @branch])
+    push!(dir, ["push", "--quiet", lease, "origin", @branch])
+  end
+
+  defp push!(dir, args) do
+    IO.write("pushing... ")
+    git!(dir, args)
   end
 
   defp pull_request(dir) do
