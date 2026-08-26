@@ -1,0 +1,21 @@
+# The directory Mix will write compiled artifacts to.
+/_build/
+
+# The directory Mix downloads your dependencies sources to.
+/deps/
+
+# Temporary files, for example, from tests.
+/tmp/
+
+# If the VM crashes, it generates a dump, let's ignore it too.
+erl_crash.dump
+
+# macOS.
+.DS_Store
+
+# Dialyzer PLTs.
+.plts
+
+# Expert / ElixirLS workspace.
+.expert/
+.elixir_ls/
