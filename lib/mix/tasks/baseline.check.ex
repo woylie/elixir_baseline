@@ -14,6 +14,7 @@ defmodule Mix.Tasks.Baseline.Check do
 
   alias ElixirBaseline.Check
   alias ElixirBaseline.Config
+  alias ElixirBaseline.Options
 
   @switches [repo: :keep, config: :string]
 
@@ -22,7 +23,7 @@ defmodule Mix.Tasks.Baseline.Check do
     {opts, _} = OptionParser.parse!(argv, strict: @switches)
 
     results =
-      for spec <- Config.repos(config_opts(opts)) do
+      for spec <- Config.repos(Options.repos(opts)) do
         {spec, Check.Credo.run(spec)}
       end
 
@@ -30,13 +31,6 @@ defmodule Mix.Tasks.Baseline.Check do
 
     report(results)
     summarise(results)
-  end
-
-  defp config_opts(opts) do
-    only = Keyword.get_values(opts, :repo)
-
-    [path: opts[:config], only: if(only == [], do: nil, else: only)]
-    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
   end
 
   defp report(results) do
