@@ -19,3 +19,5 @@ erl_crash.dump
 # Expert / ElixirLS workspace.
 .expert/
 .elixir_ls/
+
+.baseline.*.exs
