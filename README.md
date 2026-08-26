@@ -16,8 +16,8 @@ You need the [`gh` CLI](https://cli.github.com) installed and authenticated.
 To use this tool, you need to clone it and create a configuration file.
 
 ```bash
-git clone https://github.com/woylie/elixir-baseline.git
-cd elixir-baseline
+git clone https://github.com/woylie/elixir_baseline.git
+cd elixir_baseline
 cp .baseline.exs .baseline.override.exs
 ```
 
@@ -56,7 +56,7 @@ The lookup order of the repo settings is:
 - configuration under `repos`
 - group configuration under `defaults`
 - "all" group configuration
-- elixir-baseline's own defaults
+- elixir_baseline's own defaults
 
 ## Usage
 
