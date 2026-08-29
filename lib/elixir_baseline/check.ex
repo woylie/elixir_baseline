@@ -4,16 +4,22 @@ defmodule ElixirBaseline.Check do
   """
 
   alias ElixirBaseline.Config
+  alias ElixirBaseline.Diff
   alias ElixirBaseline.GH
   alias ElixirBaseline.Render
 
   @type finding ::
-          :ok | :missing | {:differs, pos_integer} | {:error, String.t()}
+          :ok
+          | {:missing, String.t()}
+          | {:differs, Diff.t()}
+          | {:error, String.t()}
 
   @doc """
   Compares every generated file of a resolved repo against the templates.
 
-  Returns one finding per file, ordered by path.
+  Returns one finding per file, ordered by path. A missing file holds what the
+  template renders, and a differing one holds the difference, so that neither
+  has to be read a second time.
 
   `fetcher` takes a REST path and returns what `GH.get/1` returns.
   """
@@ -53,10 +59,11 @@ defmodule ElixirBaseline.Check do
     if same?(actual, expected) do
       :ok
     else
-      {:differs, uncommon_lines(actual, expected)}
+      {:differs, Diff.lines(actual, expected)}
     end
   end
 
+  defp compare(:missing, expected), do: {:missing, expected}
   defp compare(finding, _expected), do: finding
 
   # A trailing newline is not drift in a text file, but a template copied
@@ -67,12 +74,5 @@ defmodule ElixirBaseline.Check do
     else
       actual == expected
     end
-  end
-
-  defp uncommon_lines(actual, expected) do
-    a = actual |> String.split("\n") |> MapSet.new()
-    b = expected |> String.split("\n") |> MapSet.new()
-
-    MapSet.size(MapSet.difference(a, b)) + MapSet.size(MapSet.difference(b, a))
   end
 end

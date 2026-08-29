@@ -14,6 +14,7 @@ defmodule Mix.Tasks.Baseline.Check do
 
   alias ElixirBaseline.Check
   alias ElixirBaseline.Config
+  alias ElixirBaseline.Diff
   alias ElixirBaseline.Options
 
   @switches [repo: :keep, config: :string]
@@ -78,9 +79,14 @@ defmodule Mix.Tasks.Baseline.Check do
   defp pad(label, width), do: String.pad_trailing(label, width + 2)
 
   defp describe(:ok), do: "ok"
-  defp describe(:missing), do: "missing"
-  defp describe({:differs, n}), do: "differs -- #{n} lines not in common"
+  defp describe({:missing, _expected}), do: "missing"
   defp describe({:error, reason}), do: "error -- #{reason}"
+
+  defp describe({:differs, diff}) do
+    {added, removed} = Diff.counts(diff)
+
+    "differs -- +#{added} -#{removed}"
+  end
 
   defp summarise(results, reported?) do
     findings = Enum.flat_map(results, fn {_spec, findings} -> findings end)

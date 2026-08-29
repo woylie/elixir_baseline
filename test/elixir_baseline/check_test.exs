@@ -51,19 +51,23 @@ defmodule ElixirBaseline.CheckTest do
       assert Check.run(@spek, stub(trimmed)) == [{".credo.exs", :ok}]
     end
 
-    test "reports a magnitude when the file differs" do
+    test "holds the difference when the file differs" do
       changed =
         @spek
         |> rendered(".credo.exs")
         |> String.replace("line_length: 80", "line_length: 120")
 
-      assert [{".credo.exs", {:differs, 2}}] = Check.run(@spek, stub(changed))
+      assert [{".credo.exs", {:differs, diff}}] =
+               Check.run(@spek, stub(changed))
+
+      assert ElixirBaseline.Diff.counts(diff) == {1, 1}
     end
 
-    test "is missing when the file does not exist" do
+    test "holds what the template renders when the file does not exist" do
       fetcher = fn _ -> {:error, {:http, 404, "Not Found"}} end
 
-      assert Check.run(@spek, fetcher) == [{".credo.exs", :missing}]
+      assert [{".credo.exs", {:missing, expected}}] = Check.run(@spek, fetcher)
+      assert expected == rendered(@spek, ".credo.exs")
     end
 
     test "reports a failed request as an error, not as drift" do
@@ -86,7 +90,7 @@ defmodule ElixirBaseline.CheckTest do
     test "reports a project that has drifted on its own" do
       fetcher = stub_all(%{".credo.exs" => rendered(@nested, ".credo.exs")})
 
-      assert [{".credo.exs", :ok}, {"demo/.credo.exs", :missing}] =
+      assert [{".credo.exs", :ok}, {"demo/.credo.exs", {:missing, _}}] =
                Check.run(@nested, fetcher)
     end
   end
@@ -94,7 +98,11 @@ defmodule ElixirBaseline.CheckTest do
   describe "ok?/1" do
     test "is true only when every file matches" do
       assert Check.ok?([{".credo.exs", :ok}, {"demo/.credo.exs", :ok}])
-      refute Check.ok?([{".credo.exs", :ok}, {"demo/.credo.exs", :missing}])
+
+      refute Check.ok?([
+               {".credo.exs", :ok},
+               {"demo/.credo.exs", {:missing, ""}}
+             ])
     end
   end
 end
