@@ -11,7 +11,7 @@ defmodule ElixirBaseline.Render do
   """
   @spec files(map) :: %{String.t() => String.t()}
   def files(spec) do
-    Map.new([spec | spec.subprojects], fn project ->
+    Map.new(spec.projects, fn project ->
       {path(project, @credo), credo(project)}
     end)
   end

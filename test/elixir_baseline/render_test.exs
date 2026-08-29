@@ -18,17 +18,18 @@ defmodule ElixirBaseline.RenderTest do
   end
 
   describe "files/1" do
-    test "keys the repo's file by its path in the repo" do
-      spec = %{line_length: 80, path: ".", subprojects: []}
+    test "keys each project's file by its path in the repo" do
+      spec = %{projects: [%{line_length: 80, path: "."}]}
 
       assert Map.keys(Render.files(spec)) == [".credo.exs"]
     end
 
-    test "puts a subproject's file under its path, with its own settings" do
+    test "renders each project with its own settings" do
       spec = %{
-        line_length: 80,
-        path: ".",
-        subprojects: [%{line_length: 120, path: "demo"}]
+        projects: [
+          %{line_length: 80, path: "."},
+          %{line_length: 120, path: "demo"}
+        ]
       }
 
       files = Render.files(spec)
@@ -38,11 +39,12 @@ defmodule ElixirBaseline.RenderTest do
       assert files["demo/.credo.exs"] =~ "max_length: 120"
     end
 
-    test "generates nothing at the root for a repo with a path" do
+    test "generates nothing at the root where no project sits there" do
       spec = %{
-        line_length: 80,
-        path: "elixir/my_app",
-        subprojects: [%{line_length: 80, path: "elixir/my_app/demo"}]
+        projects: [
+          %{line_length: 80, path: "elixir/my_app"},
+          %{line_length: 80, path: "elixir/my_app/demo"}
+        ]
       }
 
       assert Enum.sort(Map.keys(Render.files(spec))) ==

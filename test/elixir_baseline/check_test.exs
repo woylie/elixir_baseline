@@ -4,20 +4,11 @@ defmodule ElixirBaseline.CheckTest do
   alias ElixirBaseline.Check
   alias ElixirBaseline.Render
 
-  @spek %{
-    name: :spek,
-    owner: "acme",
-    line_length: 80,
-    path: ".",
-    subprojects: []
-  }
+  @root %{name: :spek, owner: "acme", line_length: 80, path: "."}
+  @demo %{name: :spek, owner: "acme", line_length: 120, path: "demo"}
 
-  @nested %{
-    @spek
-    | subprojects: [
-        %{name: :spek, owner: "acme", line_length: 120, path: "demo"}
-      ]
-  }
+  @spek %{name: :spek, owner: "acme", projects: [@root]}
+  @nested %{@spek | projects: [@root, @demo]}
 
   defp stub(contents) do
     fn path ->
@@ -37,20 +28,20 @@ defmodule ElixirBaseline.CheckTest do
 
   describe "run/2" do
     test "is ok when the file matches" do
-      assert Check.run(@spek, stub(Render.credo(@spek))) == [
+      assert Check.run(@spek, stub(Render.credo(@root))) == [
                {".credo.exs", :ok}
              ]
     end
 
     test "is ok when only the final newline differs" do
-      trimmed = @spek |> Render.credo() |> String.trim_trailing()
+      trimmed = @root |> Render.credo() |> String.trim_trailing()
 
       assert Check.run(@spek, stub(trimmed)) == [{".credo.exs", :ok}]
     end
 
     test "reports a magnitude when the file differs" do
       changed =
-        @spek
+        @root
         |> Render.credo()
         |> String.replace("max_length: 80", "max_length: 120")
 
@@ -70,12 +61,10 @@ defmodule ElixirBaseline.CheckTest do
     end
 
     test "reports a finding per file, ordered by path" do
-      [subproject] = @nested.subprojects
-
       fetcher =
         stub_all(%{
-          ".credo.exs" => Render.credo(@nested),
-          "demo/.credo.exs" => Render.credo(subproject)
+          ".credo.exs" => Render.credo(@root),
+          "demo/.credo.exs" => Render.credo(@demo)
         })
 
       assert Check.run(@nested, fetcher) ==
@@ -83,7 +72,7 @@ defmodule ElixirBaseline.CheckTest do
     end
 
     test "reports a subproject that has drifted on its own" do
-      fetcher = stub_all(%{".credo.exs" => Render.credo(@nested)})
+      fetcher = stub_all(%{".credo.exs" => Render.credo(@root)})
 
       assert [{".credo.exs", :ok}, {"demo/.credo.exs", :missing}] =
                Check.run(@nested, fetcher)

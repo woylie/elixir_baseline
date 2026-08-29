@@ -51,10 +51,11 @@ defmodule ElixirBaseline.ConfigTest do
   end
 
   @tag :tmp_dir
-  test "resolves no subprojects where a repo declares none", %{tmp_dir: dir} do
+  test "resolves one project where a repo declares no subprojects",
+       %{tmp_dir: dir} do
     manifest = [defaults: [all: [owner: "acme"]], repos: [a: []]]
 
-    assert [%{subprojects: []}] = repos(dir, manifest)
+    assert [%{projects: [%{path: "."}]}] = repos(dir, manifest)
   end
 
   @tag :tmp_dir
@@ -78,7 +79,7 @@ defmodule ElixirBaseline.ConfigTest do
       ]
     ]
 
-    assert [%{subprojects: [inherits, grouped, own]}] = repos(dir, manifest)
+    assert [%{projects: [_root, inherits, grouped, own]}] = repos(dir, manifest)
 
     assert {"acme/lib", "inherits", 80, :library} == identity(inherits)
     assert {"acme/lib", "grouped", 80, :application} == identity(grouped)
@@ -93,7 +94,7 @@ defmodule ElixirBaseline.ConfigTest do
       repos: [r: [subprojects: [demo: []]]]
     ]
 
-    assert [%{path: ".", subprojects: [%{path: "demo"}]}] = repos(dir, manifest)
+    assert [%{projects: [%{path: "."}, %{path: "demo"}]}] = repos(dir, manifest)
   end
 
   @tag :tmp_dir
@@ -108,9 +109,8 @@ defmodule ElixirBaseline.ConfigTest do
       ]
     ]
 
-    assert [%{path: "elixir/my_app", subprojects: [demo]}] =
-             repos(dir, manifest)
-
+    assert [%{projects: [root, demo]}] = repos(dir, manifest)
+    assert root.path == "elixir/my_app"
     assert demo.path == "elixir/my_app/demo"
   end
 
@@ -118,7 +118,7 @@ defmodule ElixirBaseline.ConfigTest do
   test "normalizes a leading ./ and a trailing slash", %{tmp_dir: dir} do
     manifest = [defaults: [all: [owner: "a"]], repos: [r: [path: "./apps/x/"]]]
 
-    assert [%{path: "apps/x"}] = repos(dir, manifest)
+    assert [%{projects: [%{path: "apps/x"}]}] = repos(dir, manifest)
   end
 
   @tag :tmp_dir

@@ -119,27 +119,29 @@ defmodule ElixirBaseline.Config do
   end
 
   defp repo(defaults, name, spec) do
-    resolved =
-      defaults
-      |> resolve([], spec)
-      |> Map.merge(%{name: name, path: Keyword.get(spec, :path, ".")})
+    settings = resolve(defaults, [], spec)
+    root = project(settings, name, Keyword.get(spec, :path, "."))
 
     subprojects =
       for {subname, subproject} <- Keyword.get(spec, :subprojects, []) do
         path = Keyword.get(subproject, :path, to_string(subname))
 
         defaults
-        |> resolve(Map.to_list(resolved), subproject)
-        |> Map.merge(%{name: name, path: path})
+        |> resolve(Map.to_list(settings), subproject)
+        |> project(name, path)
       end
 
-    resolved
-    |> Map.put(:subprojects, subprojects)
+    settings
+    |> Map.merge(%{name: name, projects: [root | subprojects]})
     |> unique_paths!()
   end
 
+  defp project(settings, name, path) do
+    Map.merge(settings, %{name: name, path: path})
+  end
+
   defp unique_paths!(repo) do
-    paths = Enum.map([repo | repo.subprojects], & &1.path)
+    paths = Enum.map(repo.projects, & &1.path)
 
     case paths -- Enum.uniq(paths) do
       [] ->
