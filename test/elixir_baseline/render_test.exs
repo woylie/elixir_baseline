@@ -37,7 +37,7 @@ defmodule ElixirBaseline.RenderTest do
       assert files["demo/.credo.exs"] =~ "line_length: 120"
     end
 
-    test "generates nothing at the root where no project sits there" do
+    test "generates nothing at the root if no project sits there" do
       files =
         Render.files(
           repo([project(path: "elixir/my_app"), project(path: "elixir/demo")])
@@ -76,7 +76,7 @@ defmodule ElixirBaseline.RenderTest do
     @tag :tmp_dir
     test "lets a later directory override a template of a different kind",
          %{tmp_dir: dir} do
-      # not an .eex, where the one it overrides is
+      # not an .eex, unlike the one it overrides
       template!(dir, "project/.credo.exs", "mine\n")
       layered = @templates ++ [dir]
 
@@ -270,7 +270,7 @@ defmodule ElixirBaseline.RenderTest do
     end
 
     @tag :tmp_dir
-    test "generates no file where a template renders to nothing",
+    test "generates no file if a template renders to nothing",
          %{tmp_dir: dir} do
       template!(
         dir,
@@ -302,7 +302,7 @@ defmodule ElixirBaseline.RenderTest do
     end
 
     @tag :tmp_dir
-    test "renders a template using extra where none is set", %{tmp_dir: dir} do
+    test "renders a template using extra when none is set", %{tmp_dir: dir} do
       template!(dir, "project/Dockerfile.eex", "FROM <%= @extra[:image] %>\n")
 
       files = Render.files(repo([project(templates: [dir])], templates: [dir]))

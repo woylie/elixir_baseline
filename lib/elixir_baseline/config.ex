@@ -1,6 +1,6 @@
 defmodule ElixirBaseline.Config do
   @moduledoc """
-  Reads `.baseline.override.exs`, or `.baseline.exs` where there is no override,
+  Reads `.baseline.override.exs`, or `.baseline.exs` if there is no override,
   and resolves each repo's settings.
 
   Lookup order:
@@ -116,7 +116,7 @@ defmodule ElixirBaseline.Config do
         Duplicate #{kind}: #{name}.
 
         Each #{kind} is written once. Two entries under one name are read as
-        two things where they are meant as one.
+        two things when they are meant as one.
         """
     end
   end

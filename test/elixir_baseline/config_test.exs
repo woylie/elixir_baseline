@@ -52,7 +52,7 @@ defmodule ElixirBaseline.ConfigTest do
   end
 
   @tag :tmp_dir
-  test "holds one project at its root where a repo names none",
+  test "holds one project at its root if a repo names none",
        %{tmp_dir: dir} do
     manifest = [defaults: [all: [owner: "acme"]], repos: [a: []]]
 
@@ -60,7 +60,7 @@ defmodule ElixirBaseline.ConfigTest do
   end
 
   @tag :tmp_dir
-  test "holds no project at its root where a repo names none there",
+  test "holds no project at its root if a repo names none there",
        %{tmp_dir: dir} do
     manifest = [
       defaults: [all: [owner: "acme"]],
