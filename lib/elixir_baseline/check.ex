@@ -1,6 +1,6 @@
-defmodule ElixirBaseline.Check.Credo do
+defmodule ElixirBaseline.Check do
   @moduledoc """
-  Reports whether a repo's `.credo.exs` matches the shared template.
+  Reports whether a repo's generated files match what the templates render.
   """
 
   alias ElixirBaseline.Config
@@ -10,23 +10,31 @@ defmodule ElixirBaseline.Check.Credo do
   @type finding ::
           :ok | :missing | {:differs, pos_integer} | {:error, String.t()}
 
-  @path ".credo.exs"
-
   @doc """
-  Compares a resolved repo's `.credo.exs` against the template.
+  Compares every generated file of a resolved repo against the templates.
+
+  Returns one finding per file, ordered by path.
 
   `fetcher` takes a REST path and returns what `GH.get/1` returns.
   """
-  @spec run(map, (String.t() -> GH.result())) :: finding
+  @spec run(map, (String.t() -> GH.result())) :: [{String.t(), finding}]
   def run(spec, fetcher \\ &GH.get/1) do
-    case fetch(spec, fetcher) do
-      {:ok, actual} -> compare(actual, Render.credo(spec))
-      finding -> finding
-    end
+    spec
+    |> Render.files()
+    |> Enum.sort()
+    |> Enum.map(fn {path, expected} ->
+      {path, compare(fetch(spec, path, fetcher), expected)}
+    end)
   end
 
-  defp fetch(spec, fetcher) do
-    case fetcher.("repos/#{Config.slug(spec)}/contents/#{@path}") do
+  @doc """
+  Returns true when every file of a checked repo matches.
+  """
+  @spec ok?([{String.t(), finding}]) :: boolean
+  def ok?(findings), do: Enum.all?(findings, &match?({_path, :ok}, &1))
+
+  defp fetch(spec, path, fetcher) do
+    case fetcher.("repos/#{Config.slug(spec)}/contents/#{path}") do
       {:ok, %{"content" => body}} ->
         {:ok, Base.decode64!(body, ignore: :whitespace)}
 
@@ -41,13 +49,15 @@ defmodule ElixirBaseline.Check.Credo do
     end
   end
 
-  defp compare(actual, expected) do
+  defp compare({:ok, actual}, expected) do
     if String.trim(actual) == String.trim(expected) do
       :ok
     else
       {:differs, uncommon_lines(actual, expected)}
     end
   end
+
+  defp compare(finding, _expected), do: finding
 
   defp uncommon_lines(actual, expected) do
     a = actual |> String.split("\n") |> MapSet.new()

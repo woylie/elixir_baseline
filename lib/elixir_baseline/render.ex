@@ -1,7 +1,16 @@
 defmodule ElixirBaseline.Render do
   @moduledoc """
-  Renders the generated per-repo files from `priv/templates`.
+  Renders the generated files from `priv/templates`.
   """
+
+  @credo ".credo.exs"
+
+  @doc """
+  Returns every generated file of a resolved repo, keyed by its path in that
+  repo.
+  """
+  @spec files(map) :: %{String.t() => String.t()}
+  def files(spec), do: %{@credo => credo(spec)}
 
   @doc """
   Returns the rendered `.credo.exs` for a resolved repo.

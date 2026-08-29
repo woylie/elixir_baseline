@@ -24,7 +24,7 @@ defmodule Mix.Tasks.Baseline.Check do
 
     results =
       for spec <- Config.repos(Options.repos(opts)) do
-        {spec, Check.Credo.run(spec)}
+        {spec, Check.run(spec)}
       end
 
     if results == [], do: Mix.raise("no configured repos matched")
@@ -39,19 +39,23 @@ defmodule Mix.Tasks.Baseline.Check do
       |> Enum.map(fn {spec, _} -> String.length(Config.slug(spec)) end)
       |> Enum.max()
 
-    Enum.each(results, fn {spec, finding} ->
+    Enum.each(results, fn {spec, findings} ->
       slug = String.pad_trailing(Config.slug(spec), width + 2)
-      Mix.shell().info(slug <> line(finding))
+      Mix.shell().info(slug <> line(findings))
     end)
   end
 
-  defp line(:ok), do: "ok"
-  defp line(:missing), do: "missing"
-  defp line({:differs, n}), do: "differs -- #{n} lines not in common"
-  defp line({:error, reason}), do: "error -- #{reason}"
+  defp line([{_path, finding}]), do: describe(finding)
+
+  defp describe(:ok), do: "ok"
+  defp describe(:missing), do: "missing"
+  defp describe({:differs, n}), do: "differs -- #{n} lines not in common"
+  defp describe({:error, reason}), do: "error -- #{reason}"
 
   defp summarise(results) do
-    drifted = Enum.reject(results, fn {_spec, finding} -> finding == :ok end)
+    drifted =
+      Enum.reject(results, fn {_spec, findings} -> Check.ok?(findings) end)
+
     matching = length(results) - length(drifted)
 
     Mix.shell().info(

@@ -54,25 +54,37 @@ defmodule Mix.Tasks.Baseline.Pr do
   defp line({:error, reason}), do: "error -- #{reason}"
 
   defp propose(spec) do
-    case Check.Credo.run(spec) do
-      :ok -> :unchanged
-      {:error, reason} -> {:error, reason}
-      _drifted -> update(spec)
+    findings = Check.run(spec)
+    errors = for {_path, {:error, reason}} <- findings, do: reason
+
+    cond do
+      errors != [] -> {:error, hd(errors)}
+      Check.ok?(findings) -> :unchanged
+      true -> update(spec)
     end
   end
 
   defp update(spec) do
     dir = Path.join(System.tmp_dir!(), "baseline-#{spec.name}-#{unique()}")
+    files = Render.files(spec)
 
     try do
       IO.write("cloning... ")
       clone!(spec, dir)
       start_branch(dir)
-      File.write!(Path.join(dir, ".credo.exs"), Render.credo(spec))
-      publish(dir)
+      write!(dir, files)
+      publish(dir, Map.keys(files))
     after
       File.rm_rf!(dir)
     end
+  end
+
+  defp write!(dir, files) do
+    Enum.each(files, fn {path, contents} ->
+      target = Path.join(dir, path)
+      File.mkdir_p!(Path.dirname(target))
+      File.write!(target, contents)
+    end)
   end
 
   defp start_branch(dir) do
@@ -85,11 +97,11 @@ defmodule Mix.Tasks.Baseline.Pr do
     end
   end
 
-  defp publish(dir) do
+  defp publish(dir, paths) do
     if git!(dir, ["status", "--porcelain"]) == "" do
       {:up_to_date, open_pull_request(dir)}
     else
-      git!(dir, ["add", ".credo.exs"])
+      git!(dir, ["add" | paths])
       git!(dir, ["commit", "--quiet", "-m", @message])
       IO.write("pushing... ")
       git!(dir, ["push", "--quiet", "origin", @branch])

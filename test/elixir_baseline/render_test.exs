@@ -16,4 +16,10 @@ defmodule ElixirBaseline.RenderTest do
                |> Kernel.<>("\n")
     end
   end
+
+  describe "files/1" do
+    test "keys the repo's file by its path in the repo" do
+      assert Map.keys(Render.files(%{line_length: 80})) == [".credo.exs"]
+    end
+  end
 end
