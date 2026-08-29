@@ -15,6 +15,26 @@ defmodule ElixirBaseline.Config do
   @override ".baseline.override.exs"
   @defaults [all: [line_length: 80]]
 
+  @settings [
+    line_length: [
+      type: :pos_integer,
+      doc: "Line length for the formatter."
+    ]
+  ]
+
+  @group_schema NimbleOptions.new!([owner: [type: :string]] ++ @settings)
+
+  @repo_schema NimbleOptions.new!(
+                 [
+                   owner: [type: :string, doc: "GitHub owner of the repo."],
+                   group: [
+                     type: :atom,
+                     doc:
+                       "The group defined under `defaults` this repo belongs to."
+                   ]
+                 ] ++ @settings
+               )
+
   @doc """
   Returns all configured repos with their settings resolved.
   """
@@ -23,12 +43,18 @@ defmodule ElixirBaseline.Config do
     opts = Keyword.validate!(opts, path: default_path(), only: nil)
     only = Keyword.fetch!(opts, :only)
     {config, _} = opts |> Keyword.fetch!(:path) |> Code.eval_file()
-    defaults = config[:defaults] || []
+
+    defaults =
+      for {group, settings} <- config[:defaults] || [] do
+        {group, validate!(settings, @group_schema, "group #{group}")}
+      end
 
     config
     |> Keyword.fetch!(:repos)
     |> filter_repos(only)
-    |> Enum.map(fn {name, spec} -> resolve(defaults, name, spec) end)
+    |> Enum.map(fn {name, spec} ->
+      resolve(defaults, name, validate!(spec, @repo_schema, "repo #{name}"))
+    end)
   end
 
   defp default_path do
@@ -46,6 +72,20 @@ defmodule ElixirBaseline.Config do
   """
   @spec slug(map) :: String.t()
   def slug(%{owner: owner, name: name}), do: "#{owner}/#{name}"
+
+  defp validate!(settings, schema, context) do
+    case NimbleOptions.validate(settings, schema) do
+      {:ok, validated} ->
+        validated
+
+      {:error, error} ->
+        raise ArgumentError, """
+        Invalid configuration for #{context}.
+
+        #{Exception.message(error)}
+        """
+    end
+  end
 
   defp resolve(defaults, name, spec) do
     [@defaults, defaults]

@@ -3,16 +3,15 @@ defmodule ElixirBaseline.ConfigTest do
 
   alias ElixirBaseline.Config
 
-  defp repos(dir, contents, opts \\ []) do
+  defp repos(dir, manifest, opts \\ []) do
     path = Path.join(dir, ".baseline.exs")
-    File.write!(path, contents)
+    File.write!(path, inspect(manifest, limit: :infinity))
     Config.repos(Keyword.put(opts, :path, path))
   end
 
   @tag :tmp_dir
   test "resolves each level over the one before", %{tmp_dir: dir} do
-    manifest = """
-    [
+    manifest = [
       defaults: [
         all: [owner: "acme", line_length: 98],
         application: [owner: "someorg"]
@@ -24,7 +23,6 @@ defmodule ElixirBaseline.ConfigTest do
         plain: []
       ]
     ]
-    """
 
     assert [lib, app, own, plain] = repos(dir, manifest)
 
@@ -43,14 +41,36 @@ defmodule ElixirBaseline.ConfigTest do
 
   @tag :tmp_dir
   test "falls back to elixir_baseline's own defaults", %{tmp_dir: dir} do
-    manifest = ~s|[defaults: [all: [owner: "acme"]], repos: [a: []]]|
+    manifest = [defaults: [all: [owner: "acme"]], repos: [a: []]]
 
     assert [%{line_length: 80}] = repos(dir, manifest)
   end
 
   @tag :tmp_dir
+  test "rejects an unknown option", %{tmp_dir: dir} do
+    manifest = [defaults: [all: [owner: "a"]], repos: [r: [line_lenght: 80]]]
+
+    assert_raise ArgumentError, ~r/unknown options \[:line_lenght\]/, fn ->
+      repos(dir, manifest)
+    end
+  end
+
+  @tag :tmp_dir
+  test "rejects a wrong-typed value", %{tmp_dir: dir} do
+    group = [defaults: [all: [line_length: "eighty"]], repos: []]
+    repo = [defaults: [all: [owner: "a"]], repos: [r: [line_length: "eighty"]]]
+
+    # the error names the group or the repo the value was set on
+    for {context, manifest} <- [{"group all", group}, {"repo r", repo}] do
+      assert_raise ArgumentError,
+                   ~r/Invalid configuration for #{context}.*:line_length/s,
+                   fn -> repos(dir, manifest) end
+    end
+  end
+
+  @tag :tmp_dir
   test "filters by name, keeping manifest order", %{tmp_dir: dir} do
-    manifest = ~s|[defaults: [all: [owner: "a"]], repos: [z: [], b: [], m: []]]|
+    manifest = [defaults: [all: [owner: "a"]], repos: [z: [], b: [], m: []]]
 
     filtered = repos(dir, manifest, only: ["m", "z"])
 
