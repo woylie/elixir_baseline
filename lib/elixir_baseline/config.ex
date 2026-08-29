@@ -29,9 +29,16 @@ defmodule ElixirBaseline.Config do
     ]
   ]
 
+  @path_option [
+    path: [
+      type: {:custom, __MODULE__, :validate_path, []},
+      doc: "Directory the project lives in, relative to the repository root."
+    ]
+  ]
+
   @group_schema NimbleOptions.new!([owner: [type: :string]] ++ @settings)
 
-  @subproject_schema @group_option ++ @settings
+  @subproject_schema @group_option ++ @path_option ++ @settings
 
   @repo_schema NimbleOptions.new!(
                  [
@@ -41,7 +48,7 @@ defmodule ElixirBaseline.Config do
                      keys: [*: [type: :keyword_list, keys: @subproject_schema]],
                      doc: "Nested Mix projects, keyed by name."
                    ]
-                 ] ++ @group_option ++ @settings
+                 ] ++ @group_option ++ @path_option ++ @settings
                )
 
   @doc """
@@ -82,6 +89,21 @@ defmodule ElixirBaseline.Config do
   @spec slug(map) :: String.t()
   def slug(%{owner: owner, name: name}), do: "#{owner}/#{name}"
 
+  @doc false
+  @spec validate_path(term) :: {:ok, String.t()} | {:error, String.t()}
+  def validate_path(path) when is_binary(path) do
+    if Path.type(path) == :relative and ".." not in Path.split(path) and
+         path != "" do
+      {:ok, Path.relative_to(path, ".")}
+    else
+      {:error, "expected a path inside the repository, got: #{inspect(path)}"}
+    end
+  end
+
+  def validate_path(other) do
+    {:error, "expected a string, got: #{inspect(other)}"}
+  end
+
   defp validate!(settings, schema, context) do
     case NimbleOptions.validate(settings, schema) do
       {:ok, validated} ->
@@ -100,16 +122,39 @@ defmodule ElixirBaseline.Config do
     resolved =
       defaults
       |> resolve([], spec)
-      |> Map.merge(%{name: name, path: "."})
+      |> Map.merge(%{name: name, path: Keyword.get(spec, :path, ".")})
 
     subprojects =
       for {subname, subproject} <- Keyword.get(spec, :subprojects, []) do
+        path = Keyword.get(subproject, :path, to_string(subname))
+
         defaults
         |> resolve(Map.to_list(resolved), subproject)
-        |> Map.merge(%{name: name, path: to_string(subname)})
+        |> Map.merge(%{name: name, path: path})
       end
 
-    Map.put(resolved, :subprojects, subprojects)
+    resolved
+    |> Map.put(:subprojects, subprojects)
+    |> unique_paths!()
+  end
+
+  defp unique_paths!(repo) do
+    paths = Enum.map([repo | repo.subprojects], & &1.path)
+
+    case paths -- Enum.uniq(paths) do
+      [] ->
+        repo
+
+      [path | _] ->
+        raise ArgumentError, """
+        Duplicate project path in repo #{repo.name}.
+
+        Every project in a repository generates its own files, so two of them
+        cannot live at the same path.
+
+          path: #{inspect(path)}
+        """
+    end
   end
 
   # `base` is the parent's resolved settings for a subproject, and empty for a

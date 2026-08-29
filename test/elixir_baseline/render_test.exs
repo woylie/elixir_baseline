@@ -37,5 +37,16 @@ defmodule ElixirBaseline.RenderTest do
       assert files[".credo.exs"] =~ "max_length: 80"
       assert files["demo/.credo.exs"] =~ "max_length: 120"
     end
+
+    test "generates nothing at the root for a repo with a path" do
+      spec = %{
+        line_length: 80,
+        path: "elixir/my_app",
+        subprojects: [%{line_length: 80, path: "elixir/my_app/demo"}]
+      }
+
+      assert Enum.sort(Map.keys(Render.files(spec))) ==
+               ["elixir/my_app/.credo.exs", "elixir/my_app/demo/.credo.exs"]
+    end
   end
 end

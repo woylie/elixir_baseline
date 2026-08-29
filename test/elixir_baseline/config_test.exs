@@ -97,6 +97,63 @@ defmodule ElixirBaseline.ConfigTest do
   end
 
   @tag :tmp_dir
+  test "puts a project where its path says", %{tmp_dir: dir} do
+    manifest = [
+      defaults: [all: [owner: "a"]],
+      repos: [
+        mono: [
+          path: "elixir/my_app",
+          subprojects: [demo: [path: "elixir/my_app/demo"]]
+        ]
+      ]
+    ]
+
+    assert [%{path: "elixir/my_app", subprojects: [demo]}] =
+             repos(dir, manifest)
+
+    assert demo.path == "elixir/my_app/demo"
+  end
+
+  @tag :tmp_dir
+  test "normalizes a leading ./ and a trailing slash", %{tmp_dir: dir} do
+    manifest = [defaults: [all: [owner: "a"]], repos: [r: [path: "./apps/x/"]]]
+
+    assert [%{path: "apps/x"}] = repos(dir, manifest)
+  end
+
+  @tag :tmp_dir
+  test "rejects a path pointing outside the repo", %{tmp_dir: dir} do
+    for path <- ~w(/etc ../sibling demo/../..) do
+      subproject = [
+        defaults: [all: [owner: "a"]],
+        repos: [r: [subprojects: [d: [path: path]]]]
+      ]
+
+      repo = [defaults: [all: [owner: "a"]], repos: [r: [path: path]]]
+
+      for manifest <- [subproject, repo] do
+        assert_raise ArgumentError,
+                     ~r/expected a path inside the repository/,
+                     fn ->
+                       repos(dir, manifest)
+                     end
+      end
+    end
+  end
+
+  @tag :tmp_dir
+  test "rejects two projects at the same path", %{tmp_dir: dir} do
+    manifest = [
+      defaults: [all: [owner: "a"]],
+      repos: [r: [subprojects: [demo: [], other: [path: "demo"]]]]
+    ]
+
+    assert_raise ArgumentError, ~r/Duplicate project path in repo r/, fn ->
+      repos(dir, manifest)
+    end
+  end
+
+  @tag :tmp_dir
   test "rejects the options a subproject cannot set", %{tmp_dir: dir} do
     for {option, value} <- [owner: "other", subprojects: []] do
       manifest = [

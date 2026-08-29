@@ -52,14 +52,20 @@ defmodule Mix.Tasks.Baseline.Check do
     end)
   end
 
-  # A repo generating a single file says everything on the repo's line. A repo
-  # with subprojects lists its files under it, so that a subproject is as
-  # visible as the repo it sits in.
-  defp entry(slug, [{_path, finding}], width) do
-    pad(slug, width) <> describe(finding)
+  # A repo generating a single file at its root says everything on the repo's
+  # line. Any other repo lists its files under it, so that a subproject is as
+  # visible as the repo it sits in, and a path away from the root is shown.
+  defp entry(slug, [{path, finding}] = findings, width) do
+    if Path.dirname(path) == "." do
+      pad(slug, width) <> describe(finding)
+    else
+      expanded(slug, findings, width)
+    end
   end
 
-  defp entry(slug, findings, width) do
+  defp entry(slug, findings, width), do: expanded(slug, findings, width)
+
+  defp expanded(slug, findings, width) do
     Enum.reduce(findings, slug, fn {path, finding}, acc ->
       acc <> "\n" <> pad(@indent <> path, width) <> describe(finding)
     end)
