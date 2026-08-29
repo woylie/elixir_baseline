@@ -13,6 +13,7 @@
   repos: [
     doggo: [group: :library],
     ecto_nested_changeset: [group: :library],
+    elixir_baseline: [group: :library],
     ex_icon: [group: :library],
     flop: [group: :library],
     flop_phoenix: [group: :library],
