@@ -22,17 +22,26 @@ defmodule ElixirBaseline.Config do
     ]
   ]
 
+  @group_option [
+    group: [
+      type: :atom,
+      doc: "The group defined under `defaults` this repo belongs to."
+    ]
+  ]
+
   @group_schema NimbleOptions.new!([owner: [type: :string]] ++ @settings)
+
+  @subproject_schema @group_option ++ @settings
 
   @repo_schema NimbleOptions.new!(
                  [
                    owner: [type: :string, doc: "GitHub owner of the repo."],
-                   group: [
-                     type: :atom,
-                     doc:
-                       "The group defined under `defaults` this repo belongs to."
+                   subprojects: [
+                     type: :keyword_list,
+                     keys: [*: [type: :keyword_list, keys: @subproject_schema]],
+                     doc: "Nested Mix projects, keyed by name."
                    ]
-                 ] ++ @settings
+                 ] ++ @group_option ++ @settings
                )
 
   @doc """
@@ -53,7 +62,7 @@ defmodule ElixirBaseline.Config do
     |> Keyword.fetch!(:repos)
     |> filter_repos(only)
     |> Enum.map(fn {name, spec} ->
-      resolve(defaults, name, validate!(spec, @repo_schema, "repo #{name}"))
+      repo(defaults, name, validate!(spec, @repo_schema, "repo #{name}"))
     end)
   end
 
@@ -68,7 +77,7 @@ defmodule ElixirBaseline.Config do
   defp filter_repos(repos, nil), do: repos
 
   @doc """
-  Returns the `owner/repo` slug of a resolved repo.
+  Returns the `owner/repo` slug of a resolved repo or subproject.
   """
   @spec slug(map) :: String.t()
   def slug(%{owner: owner, name: name}), do: "#{owner}/#{name}"
@@ -87,13 +96,32 @@ defmodule ElixirBaseline.Config do
     end
   end
 
-  defp resolve(defaults, name, spec) do
+  defp repo(defaults, name, spec) do
+    resolved =
+      defaults
+      |> resolve([], spec)
+      |> Map.merge(%{name: name, path: "."})
+
+    subprojects =
+      for {subname, subproject} <- Keyword.get(spec, :subprojects, []) do
+        defaults
+        |> resolve(Map.to_list(resolved), subproject)
+        |> Map.merge(%{name: name, path: to_string(subname)})
+      end
+
+    Map.put(resolved, :subprojects, subprojects)
+  end
+
+  # `base` is the parent's resolved settings for a subproject, and empty for a
+  # repo, so both resolve through the same levels.
+  defp resolve(defaults, base, spec) do
+    spec = base |> Keyword.merge(spec) |> Keyword.delete(:subprojects)
+
     [@defaults, defaults]
     |> Enum.flat_map(&[&1[:all], &1[spec[:group]]])
     |> Enum.reject(&is_nil/1)
     |> Enum.reduce([], &Keyword.merge(&2, &1))
     |> Keyword.merge(spec)
     |> Map.new()
-    |> Map.put(:name, name)
   end
 end

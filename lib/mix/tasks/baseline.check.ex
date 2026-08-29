@@ -18,6 +18,8 @@ defmodule Mix.Tasks.Baseline.Check do
 
   @switches [repo: :keep, config: :string]
 
+  @indent "  "
+
   @impl Mix.Task
   def run(argv) do
     {opts, _} = OptionParser.parse!(argv, strict: @switches)
@@ -36,16 +38,34 @@ defmodule Mix.Tasks.Baseline.Check do
   defp report(results) do
     width =
       results
-      |> Enum.map(fn {spec, _} -> String.length(Config.slug(spec)) end)
+      |> Enum.flat_map(fn {spec, findings} ->
+        [
+          Config.slug(spec)
+          | Enum.map(findings, fn {path, _} -> @indent <> path end)
+        ]
+      end)
+      |> Enum.map(&String.length/1)
       |> Enum.max()
 
     Enum.each(results, fn {spec, findings} ->
-      slug = String.pad_trailing(Config.slug(spec), width + 2)
-      Mix.shell().info(slug <> line(findings))
+      Mix.shell().info(entry(Config.slug(spec), findings, width))
     end)
   end
 
-  defp line([{_path, finding}]), do: describe(finding)
+  # A repo generating a single file says everything on the repo's line. A repo
+  # with subprojects lists its files under it, so that a subproject is as
+  # visible as the repo it sits in.
+  defp entry(slug, [{_path, finding}], width) do
+    pad(slug, width) <> describe(finding)
+  end
+
+  defp entry(slug, findings, width) do
+    Enum.reduce(findings, slug, fn {path, finding}, acc ->
+      acc <> "\n" <> pad(@indent <> path, width) <> describe(finding)
+    end)
+  end
+
+  defp pad(label, width), do: String.pad_trailing(label, width + 2)
 
   defp describe(:ok), do: "ok"
   defp describe(:missing), do: "missing"
@@ -53,17 +73,16 @@ defmodule Mix.Tasks.Baseline.Check do
   defp describe({:error, reason}), do: "error -- #{reason}"
 
   defp summarise(results) do
-    drifted =
-      Enum.reject(results, fn {_spec, findings} -> Check.ok?(findings) end)
-
-    matching = length(results) - length(drifted)
+    findings = Enum.flat_map(results, fn {_spec, findings} -> findings end)
+    drifted = Enum.reject(findings, fn {_path, finding} -> finding == :ok end)
+    matching = length(findings) - length(drifted)
 
     Mix.shell().info(
-      "\n#{matching}/#{length(results)} repos match the baseline."
+      "\n#{matching}/#{length(findings)} files match the baseline."
     )
 
     if drifted != [] do
-      Mix.raise("#{length(drifted)} repo(s) drifted from the baseline")
+      Mix.raise("#{length(drifted)} file(s) drifted from the baseline")
     end
   end
 end

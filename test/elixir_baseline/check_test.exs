@@ -4,12 +4,34 @@ defmodule ElixirBaseline.CheckTest do
   alias ElixirBaseline.Check
   alias ElixirBaseline.Render
 
-  @spek %{name: :spek, owner: "acme", line_length: 80}
+  @spek %{
+    name: :spek,
+    owner: "acme",
+    line_length: 80,
+    path: ".",
+    subprojects: []
+  }
+
+  @nested %{
+    @spek
+    | subprojects: [
+        %{name: :spek, owner: "acme", line_length: 120, path: "demo"}
+      ]
+  }
 
   defp stub(contents) do
     fn path ->
       assert path == "repos/acme/spek/contents/.credo.exs"
       {:ok, %{"content" => Base.encode64(contents)}}
+    end
+  end
+
+  defp stub_all(by_path) do
+    fn "repos/acme/spek/contents/" <> path ->
+      case Map.fetch(by_path, path) do
+        {:ok, contents} -> {:ok, %{"content" => Base.encode64(contents)}}
+        :error -> {:error, {:http, 404, "Not Found"}}
+      end
     end
   end
 
@@ -46,12 +68,32 @@ defmodule ElixirBaseline.CheckTest do
 
       assert [{".credo.exs", {:error, _}}] = Check.run(@spek, fetcher)
     end
+
+    test "reports a finding per file, ordered by path" do
+      [subproject] = @nested.subprojects
+
+      fetcher =
+        stub_all(%{
+          ".credo.exs" => Render.credo(@nested),
+          "demo/.credo.exs" => Render.credo(subproject)
+        })
+
+      assert Check.run(@nested, fetcher) ==
+               [{".credo.exs", :ok}, {"demo/.credo.exs", :ok}]
+    end
+
+    test "reports a subproject that has drifted on its own" do
+      fetcher = stub_all(%{".credo.exs" => Render.credo(@nested)})
+
+      assert [{".credo.exs", :ok}, {"demo/.credo.exs", :missing}] =
+               Check.run(@nested, fetcher)
+    end
   end
 
   describe "ok?/1" do
     test "is true only when every file matches" do
-      assert Check.ok?([{".credo.exs", :ok}])
-      refute Check.ok?([{".credo.exs", :missing}])
+      assert Check.ok?([{".credo.exs", :ok}, {"demo/.credo.exs", :ok}])
+      refute Check.ok?([{".credo.exs", :ok}, {"demo/.credo.exs", :missing}])
     end
   end
 end

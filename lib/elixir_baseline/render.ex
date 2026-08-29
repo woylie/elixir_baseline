@@ -10,7 +10,14 @@ defmodule ElixirBaseline.Render do
   repo.
   """
   @spec files(map) :: %{String.t() => String.t()}
-  def files(spec), do: %{@credo => credo(spec)}
+  def files(spec) do
+    Map.new([spec | spec.subprojects], fn project ->
+      {path(project, @credo), credo(project)}
+    end)
+  end
+
+  defp path(%{path: "."}, file), do: file
+  defp path(%{path: dir}, file), do: Path.join(dir, file)
 
   @doc """
   Returns the rendered `.credo.exs` for a resolved repo.
