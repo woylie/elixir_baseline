@@ -29,18 +29,21 @@
       },
       checks: %{
         extra: [
-          # Opt-in checks Credo disables by default.
           {Credo.Check.Readability.BlockPipe, []},
           {Credo.Check.Readability.OneArityFunctionInPipe, []},
           {Credo.Check.Readability.SingleFunctionToBlockPipe, []},
           {Credo.Check.Readability.SinglePipe, []},
           {Credo.Check.Readability.StrictModuleLayout, []},
+          {Credo.Check.Readability.WithCustomTaggedTuple, []},
+          {Credo.Check.Refactor.DoubleBooleanNegation, []},
           {Credo.Check.Refactor.FilterReject, []},
           {Credo.Check.Refactor.MapMap, []},
+          {Credo.Check.Refactor.NegatedIsNil, []},
           {Credo.Check.Refactor.PassAsyncInTestCases, []},
           {Credo.Check.Refactor.PipeChainStart, []},
           {Credo.Check.Refactor.RejectFilter, []},
           {Credo.Check.Warning.MapGetUnsafePass, []},
+          {Credo.Check.Warning.WrongTestFileExtension, []},
           {Credo.Check.Readability.MaxLineLength,
            [priority: :low, max_length: <%= @line_length %>]}
         ]
