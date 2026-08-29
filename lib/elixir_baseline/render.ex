@@ -118,7 +118,7 @@ defmodule ElixirBaseline.Render do
   defp contents(source, destination, settings) do
     if String.ends_with?(source, ".eex") do
       source
-      |> EEx.eval_file(assigns: settings)
+      |> EEx.eval_file(assigns: Map.put_new(settings, :extra, []))
       |> format(destination, settings)
     else
       File.read!(source)

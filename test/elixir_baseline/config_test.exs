@@ -229,6 +229,34 @@ defmodule ElixirBaseline.ConfigTest do
   end
 
   @tag :tmp_dir
+  test "resolves each key of extra on its own", %{tmp_dir: dir} do
+    manifest = [
+      defaults: [
+        all: [owner: "a", extra: [registry: "ghcr.io", tag: "latest"]],
+        library: [extra: [tag: "stable"]]
+      ],
+      repos: [
+        r: [
+          group: :library,
+          extra: [team: "core"],
+          projects: [p: [path: ".", extra: [tag: "edge"]]]
+        ]
+      ]
+    ]
+
+    assert [%{extra: repo, projects: [%{extra: project}]}] =
+             repos(dir, manifest)
+
+    assert Enum.sort(repo) == [registry: "ghcr.io", tag: "stable", team: "core"]
+
+    assert Enum.sort(project) == [
+             registry: "ghcr.io",
+             tag: "edge",
+             team: "core"
+           ]
+  end
+
+  @tag :tmp_dir
   test "rejects an unknown option", %{tmp_dir: dir} do
     manifest = [defaults: [all: [owner: "a"]], repos: [r: [line_lenght: 80]]]
 

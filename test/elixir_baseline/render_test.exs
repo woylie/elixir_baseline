@@ -256,6 +256,31 @@ defmodule ElixirBaseline.RenderTest do
       assert Map.keys(files) == [".tool-versions"]
     end
 
+    @tag :tmp_dir
+    test "renders a template with the custom assigns under extra",
+         %{tmp_dir: dir} do
+      template!(dir, "project/Dockerfile.eex", "FROM <%= @extra[:image] %>\n")
+
+      files =
+        [project(templates: [dir], extra: [image: "elixir:1.20"])]
+        |> repo(templates: [dir])
+        |> Render.files()
+
+      assert files["Dockerfile"] == "FROM elixir:1.20\n"
+    end
+
+    @tag :tmp_dir
+    test "renders a template using extra where none is set", %{tmp_dir: dir} do
+      template!(dir, "project/Dockerfile.eex", "FROM <%= @extra[:image] %>\n")
+
+      files =
+        [project(templates: [dir])]
+        |> repo(templates: [dir])
+        |> Render.files()
+
+      assert files["Dockerfile"] == "FROM \n"
+    end
+
     test "generates nothing for a scope that includes nothing" do
       files = Render.files(repo([project(include: [])]))
 

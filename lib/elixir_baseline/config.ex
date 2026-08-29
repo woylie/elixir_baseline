@@ -27,7 +27,8 @@ defmodule ElixirBaseline.Config do
           [{:in, [:default]}, {:custom, __MODULE__, :validate_directory, []}]}}
     ],
     include: [type: {:list, :string}],
-    exclude: [type: {:list, :string}]
+    exclude: [type: {:list, :string}],
+    extra: [type: :keyword_list]
   ]
 
   @group_option [
@@ -195,13 +196,18 @@ defmodule ElixirBaseline.Config do
   # `base` is the repo's resolved settings for a project, and empty for the
   # repo itself, so both resolve through the same levels.
   defp resolve(defaults, base, spec) do
-    spec = base |> Keyword.merge(spec) |> Keyword.delete(:projects)
+    spec = base |> merge(spec) |> Keyword.delete(:projects)
 
     [@defaults, defaults]
     |> Enum.flat_map(&[&1[:all], &1[spec[:group]]])
     |> Enum.reject(&is_nil/1)
-    |> Enum.reduce([], &Keyword.merge(&2, &1))
-    |> Keyword.merge(spec)
+    |> Enum.reduce([], &merge(&2, &1))
+    |> merge(spec)
     |> Map.new()
   end
+
+  defp merge(base, override), do: Keyword.merge(base, override, &merge_option/3)
+
+  defp merge_option(:extra, base, override), do: Keyword.merge(base, override)
+  defp merge_option(_option, _base, override), do: override
 end
