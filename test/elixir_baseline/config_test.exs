@@ -51,7 +51,7 @@ defmodule ElixirBaseline.ConfigTest do
   end
 
   @tag :tmp_dir
-  test "resolves one project where a repo declares no subprojects",
+  test "holds one project at its root where a repo names none",
        %{tmp_dir: dir} do
     manifest = [defaults: [all: [owner: "acme"]], repos: [a: []]]
 
@@ -59,7 +59,27 @@ defmodule ElixirBaseline.ConfigTest do
   end
 
   @tag :tmp_dir
-  test "resolves a subproject over its parent, then over its own group",
+  test "holds no project at its root where a repo names none there",
+       %{tmp_dir: dir} do
+    manifest = [
+      defaults: [all: [owner: "acme"]],
+      repos: [
+        mono: [
+          projects: [
+            my_app: [path: "elixir/my_app"],
+            tools: [path: "elixir/tools"]
+          ]
+        ]
+      ]
+    ]
+
+    assert [%{projects: [my_app, tools]}] = repos(dir, manifest)
+    assert my_app.path == "elixir/my_app"
+    assert tools.path == "elixir/tools"
+  end
+
+  @tag :tmp_dir
+  test "resolves a project over its repo, then over its own group",
        %{tmp_dir: dir} do
     manifest = [
       defaults: [
@@ -70,7 +90,7 @@ defmodule ElixirBaseline.ConfigTest do
         lib: [
           group: :library,
           line_length: 80,
-          subprojects: [
+          projects: [
             inherits: [],
             grouped: [group: :application],
             own: [line_length: 120]
@@ -79,7 +99,7 @@ defmodule ElixirBaseline.ConfigTest do
       ]
     ]
 
-    assert [%{projects: [_root, inherits, grouped, own]}] = repos(dir, manifest)
+    assert [%{projects: [inherits, grouped, own]}] = repos(dir, manifest)
 
     assert {"acme/lib", "inherits", 80, :library} == identity(inherits)
     assert {"acme/lib", "grouped", 80, :application} == identity(grouped)
@@ -87,36 +107,21 @@ defmodule ElixirBaseline.ConfigTest do
   end
 
   @tag :tmp_dir
-  test "puts a repo at the root and a subproject in a directory named after it",
-       %{tmp_dir: dir} do
+  test "puts a project in a directory named after it", %{tmp_dir: dir} do
     manifest = [
       defaults: [all: [owner: "a"]],
-      repos: [r: [subprojects: [demo: []]]]
+      repos: [r: [projects: [r: [path: "."], demo: []]]]
     ]
 
     assert [%{projects: [%{path: "."}, %{path: "demo"}]}] = repos(dir, manifest)
   end
 
   @tag :tmp_dir
-  test "puts a project where its path says", %{tmp_dir: dir} do
+  test "normalizes a leading ./ and a trailing slash", %{tmp_dir: dir} do
     manifest = [
       defaults: [all: [owner: "a"]],
-      repos: [
-        mono: [
-          path: "elixir/my_app",
-          subprojects: [demo: [path: "elixir/my_app/demo"]]
-        ]
-      ]
+      repos: [r: [projects: [x: [path: "./apps/x/"]]]]
     ]
-
-    assert [%{projects: [root, demo]}] = repos(dir, manifest)
-    assert root.path == "elixir/my_app"
-    assert demo.path == "elixir/my_app/demo"
-  end
-
-  @tag :tmp_dir
-  test "normalizes a leading ./ and a trailing slash", %{tmp_dir: dir} do
-    manifest = [defaults: [all: [owner: "a"]], repos: [r: [path: "./apps/x/"]]]
 
     assert [%{projects: [%{path: "apps/x"}]}] = repos(dir, manifest)
   end
@@ -124,20 +129,16 @@ defmodule ElixirBaseline.ConfigTest do
   @tag :tmp_dir
   test "rejects a path pointing outside the repo", %{tmp_dir: dir} do
     for path <- ~w(/etc ../sibling demo/../..) do
-      subproject = [
+      manifest = [
         defaults: [all: [owner: "a"]],
-        repos: [r: [subprojects: [d: [path: path]]]]
+        repos: [r: [projects: [d: [path: path]]]]
       ]
 
-      repo = [defaults: [all: [owner: "a"]], repos: [r: [path: path]]]
-
-      for manifest <- [subproject, repo] do
-        assert_raise ArgumentError,
-                     ~r/expected a path inside the repository/,
-                     fn ->
-                       repos(dir, manifest)
-                     end
-      end
+      assert_raise ArgumentError,
+                   ~r/expected a path inside the repository/,
+                   fn ->
+                     repos(dir, manifest)
+                   end
     end
   end
 
@@ -145,7 +146,7 @@ defmodule ElixirBaseline.ConfigTest do
   test "rejects two projects at the same path", %{tmp_dir: dir} do
     manifest = [
       defaults: [all: [owner: "a"]],
-      repos: [r: [subprojects: [demo: [], other: [path: "demo"]]]]
+      repos: [r: [projects: [demo: [], other: [path: "demo"]]]]
     ]
 
     assert_raise ArgumentError, ~r/Duplicate project path in repo r/, fn ->
@@ -154,11 +155,11 @@ defmodule ElixirBaseline.ConfigTest do
   end
 
   @tag :tmp_dir
-  test "rejects the options a subproject cannot set", %{tmp_dir: dir} do
-    for {option, value} <- [owner: "other", subprojects: []] do
+  test "rejects the options a project cannot set", %{tmp_dir: dir} do
+    for {option, value} <- [owner: "other", projects: []] do
       manifest = [
         defaults: [all: [owner: "a"]],
-        repos: [r: [subprojects: [d: [{option, value}]]]]
+        repos: [r: [projects: [d: [{option, value}]]]]
       ]
 
       assert_raise ArgumentError, ~r/unknown options \[:#{option}\]/, fn ->
@@ -181,16 +182,16 @@ defmodule ElixirBaseline.ConfigTest do
     group = [defaults: [all: [line_length: "eighty"]], repos: []]
     repo = [defaults: [all: [owner: "a"]], repos: [r: [line_length: "eighty"]]]
 
-    subproject = [
+    project = [
       defaults: [all: [owner: "a"]],
-      repos: [r: [subprojects: [d: [line_length: "eighty"]]]]
+      repos: [r: [projects: [d: [line_length: "eighty"]]]]
     ]
 
     # the error names the group or the repo the value was set on
     for {context, manifest} <- [
           {"group all", group},
           {"repo r", repo},
-          {"repo r", subproject}
+          {"repo r", project}
         ] do
       assert_raise ArgumentError,
                    ~r/Invalid configuration for #{context}.*:line_length/s,

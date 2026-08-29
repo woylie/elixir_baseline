@@ -52,9 +52,8 @@ defmodule Mix.Tasks.Baseline.Check do
     end)
   end
 
-  # A repo generating a single file at its root says everything on the repo's
-  # line. Any other repo lists its files under it, so that a subproject is as
-  # visible as the repo it sits in, and a path away from the root is shown.
+  defp entry(slug, [], width), do: pad(slug, width) <> "no projects"
+
   defp entry(slug, [{path, finding}] = findings, width) do
     if Path.dirname(path) == "." do
       pad(slug, width) <> describe(finding)

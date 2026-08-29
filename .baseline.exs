@@ -11,8 +11,18 @@
     application: []
   ],
   repos: [
-    doggo: [group: :library, subprojects: [demo: []]],
-    ecto_nested_changeset: [group: :library, subprojects: [example: []]],
+    doggo: [
+      projects: [
+        doggo: [path: ".", group: :library],
+        demo: [group: :application]
+      ]
+    ],
+    ecto_nested_changeset: [
+      projects: [
+        ecto_nested_changeset: [path: ".", group: :library],
+        example: [group: :application]
+      ]
+    ],
     elixir_baseline: [group: :library],
     ex_icon: [group: :library],
     flop: [group: :library],

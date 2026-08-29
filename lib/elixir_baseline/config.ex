@@ -38,17 +38,20 @@ defmodule ElixirBaseline.Config do
 
   @group_schema NimbleOptions.new!([owner: [type: :string]] ++ @settings)
 
-  @subproject_schema @group_option ++ @path_option ++ @settings
+  @project_schema @group_option ++ @path_option ++ @settings
 
   @repo_schema NimbleOptions.new!(
                  [
                    owner: [type: :string, doc: "GitHub owner of the repo."],
-                   subprojects: [
+                   projects: [
                      type: :keyword_list,
-                     keys: [*: [type: :keyword_list, keys: @subproject_schema]],
-                     doc: "Nested Mix projects, keyed by name."
+                     keys: [*: [type: :keyword_list, keys: @project_schema]],
+                     doc: """
+                     The Mix projects in the repo, keyed by name. Defaults to \
+                     one project named after the repo, at its root.\
+                     """
                    ]
-                 ] ++ @group_option ++ @path_option ++ @settings
+                 ] ++ @group_option ++ @settings
                )
 
   @doc """
@@ -84,7 +87,7 @@ defmodule ElixirBaseline.Config do
   defp filter_repos(repos, nil), do: repos
 
   @doc """
-  Returns the `owner/repo` slug of a resolved repo or subproject.
+  Returns the `owner/repo` slug of a resolved repo or project.
   """
   @spec slug(map) :: String.t()
   def slug(%{owner: owner, name: name}), do: "#{owner}/#{name}"
@@ -120,24 +123,23 @@ defmodule ElixirBaseline.Config do
 
   defp repo(defaults, name, spec) do
     settings = resolve(defaults, [], spec)
-    root = project(settings, name, Keyword.get(spec, :path, "."))
 
-    subprojects =
-      for {subname, subproject} <- Keyword.get(spec, :subprojects, []) do
-        path = Keyword.get(subproject, :path, to_string(subname))
+    projects =
+      for {project_name, project} <- projects(spec, name) do
+        path = Keyword.get(project, :path, to_string(project_name))
 
         defaults
-        |> resolve(Map.to_list(settings), subproject)
-        |> project(name, path)
+        |> resolve(Map.to_list(settings), project)
+        |> Map.merge(%{name: name, path: path})
       end
 
     settings
-    |> Map.merge(%{name: name, projects: [root | subprojects]})
+    |> Map.merge(%{name: name, projects: projects})
     |> unique_paths!()
   end
 
-  defp project(settings, name, path) do
-    Map.merge(settings, %{name: name, path: path})
+  defp projects(spec, name) do
+    Keyword.get_lazy(spec, :projects, fn -> [{name, [path: "."]}] end)
   end
 
   defp unique_paths!(repo) do
@@ -159,10 +161,10 @@ defmodule ElixirBaseline.Config do
     end
   end
 
-  # `base` is the parent's resolved settings for a subproject, and empty for a
-  # repo, so both resolve through the same levels.
+  # `base` is the repo's resolved settings for a project, and empty for the
+  # repo itself, so both resolve through the same levels.
   defp resolve(defaults, base, spec) do
-    spec = base |> Keyword.merge(spec) |> Keyword.delete(:subprojects)
+    spec = base |> Keyword.merge(spec) |> Keyword.delete(:projects)
 
     [@defaults, defaults]
     |> Enum.flat_map(&[&1[:all], &1[spec[:group]]])

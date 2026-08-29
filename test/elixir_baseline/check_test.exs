@@ -71,7 +71,7 @@ defmodule ElixirBaseline.CheckTest do
                [{".credo.exs", :ok}, {"demo/.credo.exs", :ok}]
     end
 
-    test "reports a subproject that has drifted on its own" do
+    test "reports a project that has drifted on its own" do
       fetcher = stub_all(%{".credo.exs" => Render.credo(@root)})
 
       assert [{".credo.exs", :ok}, {"demo/.credo.exs", :missing}] =
