@@ -80,16 +80,21 @@ cloned shallowly into a temporary directory. Re-running is safe.
 
 ```
 $ mix baseline.check
-woylie/doggo                  differs -- 163 lines not in common
-woylie/ecto_nested_changeset  differs -- 167 lines not in common
-woylie/ex_icon                differs -- 162 lines not in common
-woylie/flop                   differs -- 167 lines not in common
-woylie/flop_phoenix           differs -- 167 lines not in common
+woylie/doggo
+  .credo.exs                  ok
+  demo/.credo.exs             differs -- 162 lines not in common
+woylie/ecto_nested_changeset
+  .credo.exs                  ok
+  example/.credo.exs          missing
+woylie/elixir_baseline        ok
+woylie/ex_icon                ok
+woylie/flop                   ok
+woylie/flop_phoenix           ok
 woylie/let_me                 ok
 woylie/spek                   ok
 
-2/7 repos match the baseline.
-** (Mix) 5 repo(s) drifted from the baseline
+8/10 files match the baseline.
+** (Mix) 2 file(s) drifted from the baseline
 ```
 
 ```
@@ -105,6 +110,7 @@ spek: unchanged
 
 ## Templates
 
-You can check the templates in the `priv/templates` folder. To customize them,
-you can edit them locally. In the future, you will be able to add the tool as a
-dependency and add override templates in your own `priv` folder instead.
+The templates are in the `priv/templates` folder, split into `repo` and
+`project`. To use your own templates instead, list the directories under
+`templates`. `:default` in that list stands for the templates that ship with
+this tool.

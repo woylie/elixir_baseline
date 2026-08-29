@@ -169,6 +169,66 @@ defmodule ElixirBaseline.ConfigTest do
   end
 
   @tag :tmp_dir
+  test "resolves templates and file selection at every level", %{tmp_dir: dir} do
+    house = Path.join(dir, "house")
+    special = Path.join(dir, "special")
+    Enum.each([house, special], &File.mkdir_p!(Path.join(&1, "project")))
+
+    manifest = [
+      defaults: [all: [owner: "a"], library: [templates: [:default, house]]],
+      repos: [
+        r: [
+          group: :library,
+          exclude: ["repo/CODEOWNERS"],
+          projects: [
+            inherits: [],
+            own: [
+              templates: [special],
+              include: ["project/.credo.exs"],
+              exclude: ["project/.credo.exs"]
+            ]
+          ]
+        ]
+      ]
+    ]
+
+    assert [repo] = repos(dir, manifest)
+    assert [inherits, own] = repo.projects
+
+    assert repo.templates == [:default, house]
+    assert inherits.templates == [:default, house]
+
+    assert own.templates == [special]
+
+    assert repo.exclude == ["repo/CODEOWNERS"]
+    assert inherits.exclude == ["repo/CODEOWNERS"]
+    assert own.exclude == ["project/.credo.exs"]
+
+    refute Map.has_key?(repo, :include)
+    refute Map.has_key?(inherits, :include)
+    assert own.include == ["project/.credo.exs"]
+  end
+
+  @tag :tmp_dir
+  test "rejects a template directory that is not one", %{tmp_dir: dir} do
+    missing = Path.join(dir, "missing")
+    scopeless = Path.join(dir, "scopeless")
+    File.mkdir_p!(scopeless)
+
+    for {path, message} <- [
+          {missing, ~r/expected a directory/},
+          {scopeless, ~r/expected a directory holding repo or project/}
+        ] do
+      manifest = [
+        defaults: [all: [owner: "a"]],
+        repos: [r: [templates: [path]]]
+      ]
+
+      assert_raise ArgumentError, message, fn -> repos(dir, manifest) end
+    end
+  end
+
+  @tag :tmp_dir
   test "rejects an unknown option", %{tmp_dir: dir} do
     manifest = [defaults: [all: [owner: "a"]], repos: [r: [line_lenght: 80]]]
 
@@ -187,7 +247,6 @@ defmodule ElixirBaseline.ConfigTest do
       repos: [r: [projects: [d: [line_length: "eighty"]]]]
     ]
 
-    # the error names the group or the repo the value was set on
     for {context, manifest} <- [
           {"group all", group},
           {"repo r", repo},

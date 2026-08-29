@@ -19,7 +19,15 @@ defmodule ElixirBaseline.Config do
     line_length: [
       type: :pos_integer,
       doc: "Line length for the formatter."
-    ]
+    ],
+    templates: [
+      type:
+        {:list,
+         {:or,
+          [{:in, [:default]}, {:custom, __MODULE__, :validate_directory, []}]}}
+    ],
+    include: [type: {:list, :string}],
+    exclude: [type: {:list, :string}]
   ]
 
   @group_option [
@@ -91,6 +99,29 @@ defmodule ElixirBaseline.Config do
   """
   @spec slug(map) :: String.t()
   def slug(%{owner: owner, name: name}), do: "#{owner}/#{name}"
+
+  @doc false
+  @spec validate_directory(term) :: {:ok, String.t()} | {:error, String.t()}
+  def validate_directory(path) when is_binary(path) do
+    scopes = ElixirBaseline.Render.scopes()
+
+    cond do
+      not File.dir?(path) ->
+        {:error, "expected a directory, got: #{inspect(path)}"}
+
+      not Enum.any?(scopes, &File.dir?(Path.join(path, &1))) ->
+        {:error,
+         "expected a directory holding #{Enum.join(scopes, " or ")}, " <>
+           "got: #{inspect(path)}"}
+
+      true ->
+        {:ok, path}
+    end
+  end
+
+  def validate_directory(other) do
+    {:error, "expected a string, got: #{inspect(other)}"}
+  end
 
   @doc false
   @spec validate_path(term) :: {:ok, String.t()} | {:error, String.t()}
