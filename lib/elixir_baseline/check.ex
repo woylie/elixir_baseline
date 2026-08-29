@@ -50,7 +50,7 @@ defmodule ElixirBaseline.Check do
   end
 
   defp compare({:ok, actual}, expected) do
-    if String.trim(actual) == String.trim(expected) do
+    if same?(actual, expected) do
       :ok
     else
       {:differs, uncommon_lines(actual, expected)}
@@ -58,6 +58,16 @@ defmodule ElixirBaseline.Check do
   end
 
   defp compare(finding, _expected), do: finding
+
+  # A trailing newline is not drift in a text file, but a template copied
+  # verbatim can be any bytes, and those are compared as they are.
+  defp same?(actual, expected) do
+    if String.valid?(actual) and String.valid?(expected) do
+      String.trim(actual) == String.trim(expected)
+    else
+      actual == expected
+    end
+  end
 
   defp uncommon_lines(actual, expected) do
     a = actual |> String.split("\n") |> MapSet.new()

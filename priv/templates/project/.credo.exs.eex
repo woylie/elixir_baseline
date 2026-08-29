@@ -42,7 +42,7 @@
           {Credo.Check.Refactor.RejectFilter, []},
           {Credo.Check.Warning.MapGetUnsafePass, []},
           {Credo.Check.Readability.MaxLineLength,
-           [priority: :low, max_length: <%= line_length %>]}
+           [priority: :low, max_length: <%= @line_length %>]}
         ]
       }
     }
