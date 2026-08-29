@@ -20,6 +20,8 @@ defmodule ElixirBaseline.MixProject do
   defp elixirc_paths(_), do: ["lib"]
 
   defp deps do
-    []
+    [
+      {:credo, "== 1.7.19", only: [:dev, :test], runtime: false}
+    ]
   end
 end
