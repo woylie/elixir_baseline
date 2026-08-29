@@ -31,8 +31,12 @@ defmodule ElixirBaseline.Diff do
     end)
   end
 
-  defp split(contents),
-    do: contents |> String.trim_trailing() |> String.split("\n")
+  defp split(contents) do
+    case String.trim_trailing(contents) do
+      "" -> []
+      trimmed -> String.split(trimmed, "\n")
+    end
+  end
 
   defp count(diff, edit) do
     diff |> Keyword.get_values(edit) |> List.flatten() |> length()

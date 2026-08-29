@@ -20,6 +20,10 @@ defmodule ElixirBaseline.DiffTest do
     test "is nothing for a file that only differs by its final newline" do
       assert Diff.counts(Diff.lines("a\nb", "a\nb\n")) == {0, 0}
     end
+
+    test "counts a file that does not exist yet as added lines only" do
+      assert Diff.counts(Diff.lines("", "a\nb\n")) == {2, 0}
+    end
   end
 
   describe "format/1" do

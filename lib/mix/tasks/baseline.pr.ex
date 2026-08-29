@@ -14,16 +14,20 @@ defmodule Mix.Tasks.Baseline.Pr do
 
     * `--repo` - update only this repo. May be given more than once.
     * `--config` - path to the config. Defaults to `.baseline.exs`.
+    * `--dry-run` - report what would change and write nothing. Needs no clone,
+      so it costs one request per generated file.
+    * `--diff` - with `--dry-run`, print the changed lines rather than a count.
   """
 
   use Mix.Task
 
   alias ElixirBaseline.Check
   alias ElixirBaseline.Config
+  alias ElixirBaseline.Diff
   alias ElixirBaseline.Options
   alias ElixirBaseline.Render
 
-  @switches [repo: :keep, config: :string]
+  @switches [repo: :keep, config: :string, dry_run: :boolean, diff: :boolean]
 
   @branch "baseline/credo"
   @message "update credo config from elixir_baseline"
@@ -35,6 +39,10 @@ defmodule Mix.Tasks.Baseline.Pr do
     specs = Config.repos(Options.repos(opts))
     if specs == [], do: Mix.raise("no configured repos matched")
 
+    if opts[:dry_run], do: dry_run(specs, opts), else: propose_all(specs)
+  end
+
+  defp propose_all(specs) do
     results =
       for spec <- specs do
         IO.write("#{spec.name}: ")
@@ -46,6 +54,46 @@ defmodule Mix.Tasks.Baseline.Pr do
     failed = for {name, {:error, _reason}} <- results, do: name
     if failed != [], do: Mix.raise("could not read #{Enum.join(failed, ", ")}")
   end
+
+  defp dry_run(specs, opts) do
+    changed =
+      for spec <- specs,
+          {path, finding} <- Check.run(spec),
+          finding != :ok,
+          do: {spec, path, finding}
+
+    Enum.each(changed, &report(&1, opts[:diff]))
+
+    Mix.shell().info(
+      "\n#{length(changed)} file(s) would change. Nothing written."
+    )
+  end
+
+  defp report({spec, path, finding}, diff?) do
+    Mix.shell().info("\n#{Config.slug(spec)}  #{path}  #{summary(finding)}")
+
+    if diff?, do: Mix.shell().info(detail(finding))
+  end
+
+  defp summary({:missing, expected}) do
+    {added, _removed} = expected |> creation() |> Diff.counts()
+
+    "would be created, #{added} lines"
+  end
+
+  defp summary({:differs, diff}) do
+    {added, removed} = Diff.counts(diff)
+
+    "would change, +#{added} -#{removed}"
+  end
+
+  defp summary({:error, reason}), do: "error -- #{reason}"
+
+  defp creation(expected), do: Diff.lines("", expected)
+
+  defp detail({:missing, expected}), do: expected |> creation() |> Diff.format()
+  defp detail({:differs, diff}), do: Diff.format(diff)
+  defp detail({:error, _reason}), do: ""
 
   defp line(:unchanged), do: "unchanged"
   defp line({:up_to_date, nil}), do: "up to date"
