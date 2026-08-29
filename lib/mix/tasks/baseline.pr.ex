@@ -1,14 +1,14 @@
 defmodule Mix.Tasks.Baseline.Pr do
-  @shortdoc "Opens a pull request per repo whose Credo config has drifted"
+  @shortdoc "Opens a pull request per repo whose generated files have drifted"
 
   @moduledoc """
-  Opens one pull request per configured repo whose `.credo.exs` differs.
+  Opens one pull request per configured repo whose generated files differ. One
+  pull request updates every drifted file in that repo, on one branch, so that
+  a re-run updates it rather than opening a second one.
 
   Each repo is cloned shallowly into a temporary directory, so no local checkout
   is needed and nothing you are working on is touched. Repos that already match
   are not cloned at all.
-
-  A re-run updates the open pull request rather than opening a second one.
 
   ## Command line options
 
@@ -29,8 +29,8 @@ defmodule Mix.Tasks.Baseline.Pr do
 
   @switches [repo: :keep, config: :string, dry_run: :boolean, diff: :boolean]
 
-  @branch "baseline/credo"
-  @message "update credo config from elixir_baseline"
+  @branch "baseline/update"
+  @subject "update generated files from elixir_baseline"
 
   @impl Mix.Task
   def run(argv) do
@@ -146,15 +146,31 @@ defmodule Mix.Tasks.Baseline.Pr do
   end
 
   defp publish(dir, paths) do
-    if git!(dir, ["status", "--porcelain"]) == "" do
-      {:up_to_date, open_pull_request(dir)}
-    else
-      git!(dir, ["add" | paths])
-      git!(dir, ["commit", "--quiet", "-m", @message])
-      IO.write("pushing... ")
-      git!(dir, ["push", "--quiet", "origin", @branch])
-      {:pull_request, pull_request(dir)}
+    git!(dir, ["add" | paths])
+
+    case changed(dir) do
+      [] ->
+        {:up_to_date, open_pull_request(dir)}
+
+      changed ->
+        git!(dir, ["commit", "--quiet", "-m", message(changed)])
+        IO.write("pushing... ")
+        git!(dir, ["push", "--quiet", "origin", @branch])
+        {:pull_request, pull_request(dir)}
     end
+  end
+
+  defp changed(dir) do
+    dir
+    |> git!(["status", "--porcelain"])
+    |> String.split("\n", trim: true)
+    |> Enum.map(&(&1 |> String.slice(3..-1//1) |> String.trim()))
+  end
+
+  # The subject cannot name the files, since a repo may generate any number of
+  # them, so the body does.
+  defp message(changed) do
+    Enum.join([@subject, "" | Enum.map(changed, &("- " <> &1))], "\n")
   end
 
   defp open_pull_request(dir) do

@@ -1,8 +1,8 @@
 defmodule Mix.Tasks.Baseline.Check do
-  @shortdoc "Reports which repos' Credo config has drifted from the baseline"
+  @shortdoc "Reports which generated files have drifted from the baseline"
 
   @moduledoc """
-  Reports whether each enrolled repo's `.credo.exs` matches the shared template.
+  Reports whether the files each enrolled repo generates match its templates.
 
   ## Command line options
 
