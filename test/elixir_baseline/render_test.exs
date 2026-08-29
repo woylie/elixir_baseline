@@ -3,12 +3,17 @@ defmodule ElixirBaseline.RenderTest do
 
   alias ElixirBaseline.Render
 
+  @templates [Path.expand("../support/templates", __DIR__)]
+
   defp repo(projects, settings \\ []) do
-    Enum.into(settings, %{name: :r, line_length: 80, projects: projects})
+    Enum.into(
+      settings,
+      %{name: :r, line_length: 80, templates: @templates, projects: projects}
+    )
   end
 
   defp project(settings \\ []) do
-    Enum.into(settings, %{line_length: 80, path: "."})
+    Enum.into(settings, %{line_length: 80, path: ".", templates: @templates})
   end
 
   defp template!(dir, path, contents) do
@@ -20,68 +25,92 @@ defmodule ElixirBaseline.RenderTest do
 
   describe "files/1" do
     test "keys each project's file by its path in the repo" do
-      files = Render.files(repo([%{line_length: 80, path: "."}]))
-
-      assert Map.keys(files) == [".credo.exs"]
+      assert Map.keys(Render.files(repo([project()]))) == [".credo.exs"]
     end
 
     test "renders each project with its own settings" do
       files =
-        Render.files(
-          repo([
-            %{line_length: 80, path: "."},
-            %{line_length: 120, path: "demo"}
-          ])
-        )
+        Render.files(repo([project(), project(path: "demo", line_length: 120)]))
 
       assert Enum.sort(Map.keys(files)) == [".credo.exs", "demo/.credo.exs"]
-      assert files[".credo.exs"] =~ "max_length: 80"
-      assert files["demo/.credo.exs"] =~ "max_length: 120"
+      assert files[".credo.exs"] =~ "line_length: 80"
+      assert files["demo/.credo.exs"] =~ "line_length: 120"
     end
 
     test "generates nothing at the root where no project sits there" do
       files =
         Render.files(
-          repo([
-            %{line_length: 80, path: "elixir/my_app"},
-            %{line_length: 80, path: "elixir/my_app/demo"}
-          ])
+          repo([project(path: "elixir/my_app"), project(path: "elixir/demo")])
         )
 
       assert Enum.sort(Map.keys(files)) ==
-               ["elixir/my_app/.credo.exs", "elixir/my_app/demo/.credo.exs"]
+               ["elixir/demo/.credo.exs", "elixir/my_app/.credo.exs"]
+    end
+
+    test "formats an Elixir file to the line length it is generated with" do
+      contents = Render.files(repo([project(line_length: 120)]))[".credo.exs"]
+
+      assert contents ==
+               contents
+               |> Code.format_string!(line_length: 120)
+               |> IO.iodata_to_binary()
+               |> Kernel.<>("\n")
     end
 
     @tag :tmp_dir
-    test "layers a configured directory over the package's own",
-         %{tmp_dir: dir} do
+    test "layers a directory over the one before it", %{tmp_dir: dir} do
       template!(
         dir,
         "project/.credo.exs.eex",
         "# line length <%= @line_length %>\n"
       )
 
+      layered = @templates ++ [dir]
+
       files =
-        [project(templates: [:default, dir])]
-        |> repo(templates: [:default, dir])
-        |> Render.files()
+        Render.files(repo([project(templates: layered)], templates: layered))
 
       assert files[".credo.exs"] == "# line length 80\n"
     end
 
     @tag :tmp_dir
-    test "adds a file the package's own directory does not hold",
+    test "lets a later directory override a template of a different kind",
          %{tmp_dir: dir} do
-      template!(dir, "project/.tool-versions", "elixir 1.20\n")
-      template!(dir, "repo/CODEOWNERS", "* @woylie\n")
+      # not an .eex, where the one it overrides is
+      template!(dir, "project/.credo.exs", "mine\n")
+      layered = @templates ++ [dir]
 
       files =
-        [
-          project(templates: [:default, dir]),
-          project(path: "demo", templates: [:default, dir])
-        ]
-        |> repo(templates: [:default, dir])
-        |> Render.files()
+        Render.files(repo([project(templates: layered)], templates: layered))
+
+      assert files == %{".credo.exs" => "mine\n"}
+    end
+
+    @tag :tmp_dir
+    test "reads only the directories named", %{tmp_dir: dir} do
+      template!(dir, "project/.tool-versions", "elixir 1.20\n")
+
+      files = Render.files(repo([project(templates: [dir])], templates: [dir]))
+
+      assert Map.keys(files) == [".tool-versions"]
+    end
+
+    @tag :tmp_dir
+    test "adds a file an earlier directory does not hold", %{tmp_dir: dir} do
+      template!(dir, "project/.tool-versions", "elixir 1.20\n")
+      template!(dir, "repo/CODEOWNERS", "* @woylie\n")
+      layered = @templates ++ [dir]
+
+      files =
+        Render.files(
+          repo(
+            [
+              project(templates: layered),
+              project(path: "demo", templates: layered)
+            ],
+            templates: layered
+          )
+        )
 
       assert Enum.sort(Map.keys(files)) ==
                [
@@ -94,16 +123,12 @@ defmodule ElixirBaseline.RenderTest do
     end
 
     @tag :tmp_dir
-    test "copies a file that is not a template, byte for byte",
-         %{tmp_dir: dir} do
-      template!(dir, "repo/.gitignore", "/_build\n/deps\n<%= not a template %>")
+    test "copies a file that is not a template, byte for byte", %{tmp_dir: dir} do
+      template!(dir, "repo/.gitignore", "/_build\n<%= not a template %>")
 
-      files =
-        [project()]
-        |> repo(templates: [:default, dir])
-        |> Render.files()
+      files = Render.files(repo([project(templates: [dir])], templates: [dir]))
 
-      assert files[".gitignore"] == "/_build\n/deps\n<%= not a template %>"
+      assert files[".gitignore"] == "/_build\n<%= not a template %>"
     end
 
     @tag :tmp_dir
@@ -111,79 +136,35 @@ defmodule ElixirBaseline.RenderTest do
       template!(dir, "repo/CODEOWNERS", "* @woylie\n")
 
       files =
-        [project(path: "a"), project(path: "b")]
-        |> repo(templates: [:default, dir])
-        |> Render.files()
+        Render.files(
+          repo(
+            [
+              project(path: "a", templates: [dir]),
+              project(path: "b", templates: [dir])
+            ],
+            templates: [dir]
+          )
+        )
 
-      assert files["CODEOWNERS"] == "* @woylie\n"
-
-      assert Enum.sort(Map.keys(files)) ==
-               ["CODEOWNERS", "a/.credo.exs", "b/.credo.exs"]
+      assert Enum.sort(Map.keys(files)) == ["CODEOWNERS"]
     end
 
     @tag :tmp_dir
     test "renders a project only from its own template directories",
          %{tmp_dir: dir} do
       template!(dir, "project/.tool-versions", "elixir 1.20\n")
+      layered = @templates ++ [dir]
 
       files =
-        [project(templates: [:default, dir]), project(path: "demo")]
-        |> repo(templates: [:default, dir])
-        |> Render.files()
+        Render.files(
+          repo(
+            [project(templates: layered), project(path: "demo")],
+            templates: layered
+          )
+        )
 
       assert Enum.sort(Map.keys(files)) ==
                [".credo.exs", ".tool-versions", "demo/.credo.exs"]
-    end
-
-    @tag :tmp_dir
-    test "excludes a path from the scope it is written on", %{tmp_dir: dir} do
-      template!(dir, "repo/CODEOWNERS", "* @woylie\n")
-
-      files =
-        [
-          project(exclude: ["project/.credo.exs"]),
-          project(path: "demo")
-        ]
-        |> repo(templates: [:default, dir], exclude: ["repo/CODEOWNERS"])
-        |> Render.files()
-
-      assert Map.keys(files) == ["demo/.credo.exs"]
-    end
-
-    @tag :tmp_dir
-    test "narrows a scope to what include names", %{tmp_dir: dir} do
-      template!(dir, "project/.tool-versions", "elixir 1.20\n")
-      template!(dir, "project/.gitattributes", "* text=auto\n")
-
-      files =
-        [
-          project(
-            templates: [:default, dir],
-            include: ["project/.credo.exs", "project/.gitattributes"]
-          )
-        ]
-        |> repo(templates: [:default, dir])
-        |> Render.files()
-
-      assert Enum.sort(Map.keys(files)) == [".credo.exs", ".gitattributes"]
-    end
-
-    @tag :tmp_dir
-    test "applies exclude after include", %{tmp_dir: dir} do
-      template!(dir, "project/.tool-versions", "elixir 1.20\n")
-
-      files =
-        [
-          project(
-            templates: [:default, dir],
-            include: ["project/.credo.exs", "project/.tool-versions"],
-            exclude: ["project/.credo.exs"]
-          )
-        ]
-        |> repo(templates: [:default, dir])
-        |> Render.files()
-
-      assert Map.keys(files) == [".tool-versions"]
     end
 
     @tag :tmp_dir
@@ -193,67 +174,84 @@ defmodule ElixirBaseline.RenderTest do
       template!(dir, "project/CODEOWNERS", "project scope\n")
 
       files =
-        [project(templates: [:default, dir], exclude: ["project/.credo.exs"])]
-        |> repo(templates: [:default, dir], exclude: ["repo/CODEOWNERS"])
-        |> Render.files()
+        Render.files(
+          repo([project(templates: [dir])],
+            templates: [dir],
+            exclude: ["repo/CODEOWNERS"]
+          )
+        )
 
       # only the repo one is dropped, though the exclude reaches the project
       assert files == %{"CODEOWNERS" => "project scope\n"}
     end
 
-    test "rejects a selected template that does not exist" do
-      for option <- [:include, :exclude] do
-        repo = repo([project([{option, ["project/.credo.exs.eex"]}])])
+    @tag :tmp_dir
+    test "narrows a scope to what include names", %{tmp_dir: dir} do
+      template!(dir, "project/.tool-versions", "elixir 1.20\n")
+      template!(dir, "project/.gitattributes", "* text=auto\n")
 
-        assert_raise ArgumentError, ~r/Unknown template in #{option}/, fn ->
-          Render.files(repo)
-        end
-      end
+      files =
+        Render.files(
+          repo(
+            [project(templates: [dir], include: ["project/.gitattributes"])],
+            templates: [dir]
+          )
+        )
+
+      assert Map.keys(files) == [".gitattributes"]
+    end
+
+    @tag :tmp_dir
+    test "applies exclude after include", %{tmp_dir: dir} do
+      template!(dir, "project/.tool-versions", "elixir 1.20\n")
+      template!(dir, "project/.gitattributes", "* text=auto\n")
+
+      files =
+        Render.files(
+          repo(
+            [
+              project(
+                templates: [dir],
+                include: ["project/.tool-versions", "project/.gitattributes"],
+                exclude: ["project/.gitattributes"]
+              )
+            ],
+            templates: [dir]
+          )
+        )
+
+      assert Map.keys(files) == [".tool-versions"]
     end
 
     @tag :tmp_dir
     test "lets a repo name a template only its projects hold", %{tmp_dir: dir} do
       template!(dir, "project/.tool-versions", "elixir 1.20\n")
+      excluded = ["project/.tool-versions"]
 
       # the repo's own scope holds no such template, and that is not a typo
       files =
-        [
-          project(
-            templates: [:default, dir],
-            exclude: ["project/.tool-versions"]
+        Render.files(
+          repo([project(templates: [dir], exclude: excluded)],
+            templates: [dir],
+            exclude: excluded
           )
-        ]
-        |> repo(templates: [:default, dir], exclude: ["project/.tool-versions"])
-        |> Render.files()
+        )
 
-      assert Map.keys(files) == [".credo.exs"]
+      assert files == %{}
     end
 
-    @tag :tmp_dir
-    test "lets a later directory override a template of a different kind",
-         %{tmp_dir: dir} do
-      # not an .eex, where the one it overrides is
-      template!(dir, "project/.credo.exs", "mine\n")
+    test "rejects a selected template that does not exist" do
+      for option <- [:include, :exclude] do
+        spec = repo([project([{option, ["project/nope"]}])])
 
-      files =
-        [project(templates: [:default, dir])]
-        |> repo(templates: [:default, dir])
-        |> Render.files()
-
-      assert files == %{".credo.exs" => "mine\n"}
+        assert_raise ArgumentError, ~r/Unknown template in #{option}/, fn ->
+          Render.files(spec)
+        end
+      end
     end
 
-    @tag :tmp_dir
-    test "reads only the directories named, not the defaults too",
-         %{tmp_dir: dir} do
-      template!(dir, "project/.tool-versions", "elixir 1.20\n")
-
-      files =
-        [project(templates: [dir])]
-        |> repo(templates: [dir])
-        |> Render.files()
-
-      assert Map.keys(files) == [".tool-versions"]
+    test "generates nothing for a scope that includes nothing" do
+      assert Render.files(repo([project(include: [])])) == %{}
     end
 
     @tag :tmp_dir
@@ -262,9 +260,11 @@ defmodule ElixirBaseline.RenderTest do
       template!(dir, "project/Dockerfile.eex", "FROM <%= @extra[:image] %>\n")
 
       files =
-        [project(templates: [dir], extra: [image: "elixir:1.20"])]
-        |> repo(templates: [dir])
-        |> Render.files()
+        Render.files(
+          repo([project(templates: [dir], extra: [image: "elixir:1.20"])],
+            templates: [dir]
+          )
+        )
 
       assert files["Dockerfile"] == "FROM elixir:1.20\n"
     end
@@ -273,29 +273,9 @@ defmodule ElixirBaseline.RenderTest do
     test "renders a template using extra where none is set", %{tmp_dir: dir} do
       template!(dir, "project/Dockerfile.eex", "FROM <%= @extra[:image] %>\n")
 
-      files =
-        [project(templates: [dir])]
-        |> repo(templates: [dir])
-        |> Render.files()
+      files = Render.files(repo([project(templates: [dir])], templates: [dir]))
 
       assert files["Dockerfile"] == "FROM \n"
-    end
-
-    test "generates nothing for a scope that includes nothing" do
-      files = Render.files(repo([project(include: [])]))
-
-      assert files == %{}
-    end
-
-    test "formats an Elixir file to the line length it is generated with" do
-      contents =
-        Render.files(repo([%{line_length: 120, path: "."}]))[".credo.exs"]
-
-      assert contents ==
-               contents
-               |> Code.format_string!(line_length: 120)
-               |> IO.iodata_to_binary()
-               |> Kernel.<>("\n")
     end
   end
 end

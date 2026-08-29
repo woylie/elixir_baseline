@@ -7,19 +7,22 @@
       owner: "woylie",
       line_length: 80
     ],
-    library: [],
-    application: []
+    library: [
+      extra: [renovate_presets: ["github>woylie/renovate-presets:library"]]
+    ],
+    application: [
+      extra: [renovate_presets: ["github>woylie/renovate-presets:application"]]
+    ]
   ],
   repos: [
     doggo: [
-      projects: [
-        doggo: [path: ".", group: :library],
-        demo: [group: :application]
-      ]
+      group: :library,
+      projects: [doggo: [path: "."], demo: [group: :application]]
     ],
     ecto_nested_changeset: [
+      group: :library,
       projects: [
-        ecto_nested_changeset: [path: ".", group: :library],
+        ecto_nested_changeset: [path: "."],
         example: [group: :application]
       ]
     ],
