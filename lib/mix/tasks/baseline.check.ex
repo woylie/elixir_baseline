@@ -31,40 +31,45 @@ defmodule Mix.Tasks.Baseline.Check do
 
     if results == [], do: Mix.raise("no configured repos matched")
 
-    report(results)
-    summarise(results)
+    summarise(results, report(results))
   end
 
   defp report(results) do
-    width =
+    drifted =
       results
-      |> Enum.flat_map(fn {spec, findings} ->
-        [
-          Config.slug(spec)
-          | Enum.map(findings, fn {path, _} -> @indent <> path end)
-        ]
+      |> Enum.map(fn {spec, findings} ->
+        {spec, Enum.reject(findings, &ok?/1)}
       end)
-      |> Enum.map(&String.length/1)
-      |> Enum.max()
+      |> Enum.reject(fn {_spec, findings} -> findings == [] end)
 
-    Enum.each(results, fn {spec, findings} ->
+    width = width(drifted)
+
+    Enum.each(drifted, fn {spec, findings} ->
       Mix.shell().info(entry(Config.slug(spec), findings, width))
     end)
+
+    drifted != []
   end
 
-  defp entry(slug, [], width), do: pad(slug, width) <> "no projects"
+  defp ok?({_path, finding}), do: finding == :ok
 
-  defp entry(slug, [{path, finding}] = findings, width) do
-    if Path.dirname(path) == "." do
-      pad(slug, width) <> describe(finding)
-    else
-      expanded(slug, findings, width)
-    end
+  defp width([]), do: 0
+
+  defp width(drifted) do
+    drifted
+    |> Enum.flat_map(fn {spec, findings} ->
+      [
+        Config.slug(spec)
+        | Enum.map(findings, fn {path, _} -> @indent <> path end)
+      ]
+    end)
+    |> Enum.map(&String.length/1)
+    |> Enum.max()
   end
 
-  defp entry(slug, findings, width), do: expanded(slug, findings, width)
-
-  defp expanded(slug, findings, width) do
+  # Only what drifted is worth a line, and the file it drifted in is named
+  # under the repo, so that a subproject is as visible as the repo it sits in.
+  defp entry(slug, findings, width) do
     Enum.reduce(findings, slug, fn {path, finding}, acc ->
       acc <> "\n" <> pad(@indent <> path, width) <> describe(finding)
     end)
@@ -77,13 +82,14 @@ defmodule Mix.Tasks.Baseline.Check do
   defp describe({:differs, n}), do: "differs -- #{n} lines not in common"
   defp describe({:error, reason}), do: "error -- #{reason}"
 
-  defp summarise(results) do
+  defp summarise(results, reported?) do
     findings = Enum.flat_map(results, fn {_spec, findings} -> findings end)
-    drifted = Enum.reject(findings, fn {_path, finding} -> finding == :ok end)
+    drifted = Enum.reject(findings, &ok?/1)
     matching = length(findings) - length(drifted)
+    lead = if reported?, do: "\n", else: ""
 
     Mix.shell().info(
-      "\n#{matching}/#{length(findings)} files match the baseline."
+      "#{lead}#{matching}/#{length(findings)} files match the baseline."
     )
 
     if drifted != [] do
