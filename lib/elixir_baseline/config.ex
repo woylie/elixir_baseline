@@ -71,18 +71,96 @@ defmodule ElixirBaseline.Config do
     opts = Keyword.validate!(opts, path: default_path(), only: nil)
     only = Keyword.fetch!(opts, :only)
     {config, _} = opts |> Keyword.fetch!(:path) |> Code.eval_file()
-
-    defaults =
-      for {group, settings} <- config[:defaults] || [] do
-        {group, validate!(settings, @group_schema, "group #{group}")}
-      end
+    defaults = defaults(config[:defaults] || [])
 
     config
     |> Keyword.fetch!(:repos)
+    |> unique_keys!("repo")
     |> filter_repos(only)
     |> Enum.map(fn {name, spec} ->
-      repo(defaults, name, validate!(spec, @repo_schema, "repo #{name}"))
+      unique_projects!(spec)
+      spec = validate!(spec, @repo_schema, "repo #{name}")
+
+      defaults
+      |> repo(name, group!(spec, defaults, "repo #{name}"))
+      |> owner!(name)
     end)
+  end
+
+  defp defaults(groups) do
+    groups
+    |> unique_keys!("group")
+    |> Enum.map(fn {group, settings} ->
+      {group, validate!(settings, @group_schema, "group #{group}")}
+    end)
+  end
+
+  # NimbleOptions drops a duplicate key while validating a keyword list, so
+  # this has to read the spec as it was written.
+  defp unique_projects!(spec) do
+    with true <- Keyword.keyword?(spec),
+         projects when is_list(projects) <- Keyword.get(spec, :projects) do
+      unique_keys!(projects, "project")
+    end
+  end
+
+  defp unique_keys!(entries, kind) do
+    case Keyword.keys(entries) -- Enum.uniq(Keyword.keys(entries)) do
+      [] ->
+        entries
+
+      [name | _] ->
+        raise ArgumentError, """
+        Duplicate #{kind}: #{name}.
+
+        Each #{kind} is written once. Two entries under one name are read as
+        two things where they are meant as one.
+        """
+    end
+  end
+
+  # `group` names an entry under `defaults`, so a name that is not one there
+  # resolves to no defaults at all rather than to the ones that were meant.
+  defp group!(spec, defaults, context) do
+    group = spec[:group]
+
+    cond do
+      group == :all -> raise ArgumentError, reserved_group(context)
+      is_nil(group) or Keyword.has_key?(defaults, group) -> spec
+      true -> raise ArgumentError, unknown_group(context, group, defaults)
+    end
+  end
+
+  defp reserved_group(context) do
+    """
+    Invalid group for #{context}: all.
+
+    The `all` group under `defaults` applies to everything, so it cannot also
+    be named as a group of its own.
+    """
+  end
+
+  defp unknown_group(context, group, defaults) do
+    known = defaults |> Keyword.keys() |> List.delete(:all) |> inspect()
+
+    """
+    Unknown group for #{context}: #{group}.
+
+    A group is one of the entries under `defaults`.
+
+      known: #{known}
+    """
+  end
+
+  defp owner!(%{owner: _} = repo, _name), do: repo
+
+  defp owner!(_repo, name) do
+    raise ArgumentError, """
+    Missing owner for repo #{name}.
+
+    A repo needs an owner to be addressed on GitHub. Set it on the repo, or on
+    a group under `defaults` for every repo that shares one.
+    """
   end
 
   defp default_path do
@@ -158,6 +236,7 @@ defmodule ElixirBaseline.Config do
 
     projects =
       for {project_name, project} <- projects(spec, name) do
+        project = group!(project, defaults, "project #{project_name}")
         path = Keyword.get(project, :path, to_string(project_name))
 
         defaults

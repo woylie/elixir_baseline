@@ -18,6 +18,7 @@ defmodule ElixirBaseline.ConfigTest do
     manifest = [
       defaults: [
         all: [owner: "acme", line_length: 98],
+        library: [],
         application: [owner: "someorg"]
       ],
       repos: [
@@ -30,7 +31,7 @@ defmodule ElixirBaseline.ConfigTest do
 
     assert [lib, app, own, plain] = repos(dir, manifest)
 
-    # all:, since there is no :library group
+    # all:, since the :library group sets nothing
     assert {"acme/lib", 98} == {Config.slug(lib), lib.line_length}
 
     # :application wins for owner; line_length still comes from all:
@@ -84,6 +85,7 @@ defmodule ElixirBaseline.ConfigTest do
     manifest = [
       defaults: [
         all: [owner: "acme", line_length: 98],
+        library: [],
         application: [line_length: 100]
       ],
       repos: [
@@ -254,6 +256,62 @@ defmodule ElixirBaseline.ConfigTest do
              tag: "edge",
              team: "core"
            ]
+  end
+
+  @tag :tmp_dir
+  test "rejects a group that is not defined under defaults", %{tmp_dir: dir} do
+    on_repo = [
+      defaults: [all: [owner: "a"], library: []],
+      repos: [r: [group: :libary]]
+    ]
+
+    on_project = [
+      defaults: [all: [owner: "a"], library: []],
+      repos: [r: [projects: [p: [group: :libary]]]]
+    ]
+
+    for {context, manifest} <- [{"repo r", on_repo}, {"project p", on_project}] do
+      assert_raise ArgumentError,
+                   ~r/Unknown group for #{context}: libary.*known: \[:library\]/s,
+                   fn -> repos(dir, manifest) end
+    end
+  end
+
+  @tag :tmp_dir
+  test "rejects all as a group of its own", %{tmp_dir: dir} do
+    manifest = [defaults: [all: [owner: "a"]], repos: [r: [group: :all]]]
+
+    assert_raise ArgumentError, ~r/Invalid group for repo r: all/, fn ->
+      repos(dir, manifest)
+    end
+  end
+
+  @tag :tmp_dir
+  test "rejects a repo with no owner anywhere", %{tmp_dir: dir} do
+    manifest = [defaults: [all: [line_length: 80]], repos: [r: []]]
+
+    assert_raise ArgumentError, ~r/Missing owner for repo r/, fn ->
+      repos(dir, manifest)
+    end
+  end
+
+  @tag :tmp_dir
+  test "rejects a name written twice", %{tmp_dir: dir} do
+    written = [
+      {"group: all", [defaults: [all: [owner: "a"], all: []], repos: []]},
+      {"repo: r", [defaults: [all: [owner: "a"]], repos: [r: [], r: []]]},
+      {"project: p",
+       [
+         defaults: [all: [owner: "a"]],
+         repos: [r: [projects: [p: [path: "a"], p: [path: "b"]]]]
+       ]}
+    ]
+
+    for {name, manifest} <- written do
+      assert_raise ArgumentError, ~r/Duplicate #{name}/, fn ->
+        repos(dir, manifest)
+      end
+    end
   end
 
   @tag :tmp_dir
