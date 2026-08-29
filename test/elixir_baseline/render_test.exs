@@ -270,6 +270,38 @@ defmodule ElixirBaseline.RenderTest do
     end
 
     @tag :tmp_dir
+    test "generates no file where a template renders to nothing",
+         %{tmp_dir: dir} do
+      template!(
+        dir,
+        "project/assets.exs.eex",
+        "<%= if @extra[:assets] do %>x<% end %>"
+      )
+
+      files = Render.files(repo([project(templates: [dir])], templates: [dir]))
+
+      assert files == %{}
+
+      with_assets =
+        Render.files(
+          repo([project(templates: [dir], extra: [assets: true])],
+            templates: [dir]
+          )
+        )
+
+      assert Map.keys(with_assets) == ["assets.exs"]
+    end
+
+    @tag :tmp_dir
+    test "copies an empty file that is not a template", %{tmp_dir: dir} do
+      template!(dir, "repo/.keep", "")
+
+      files = Render.files(repo([project(templates: [dir])], templates: [dir]))
+
+      assert files == %{".keep" => ""}
+    end
+
+    @tag :tmp_dir
     test "renders a template using extra where none is set", %{tmp_dir: dir} do
       template!(dir, "project/Dockerfile.eex", "FROM <%= @extra[:image] %>\n")
 

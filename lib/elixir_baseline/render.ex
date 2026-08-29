@@ -8,7 +8,8 @@ defmodule ElixirBaseline.Render do
   that project's path, from that project's settings.
 
   A template ending in `.eex` is rendered with the resolved settings as assigns
-  and loses the extension. Any other file is copied as it is.
+  and loses the extension, and generates no file if it renders to nothing.
+  Any other file is copied as it is.
   """
 
   @scopes ["repo", "project"]
@@ -59,9 +60,19 @@ defmodule ElixirBaseline.Render do
   end
 
   defp scope(settings, scope, path) do
-    for {relative, source} <- selected(settings, scope) do
-      {destination(path, relative), contents(source, relative, settings)}
-    end
+    Enum.flat_map(selected(settings, scope), fn {relative, source} ->
+      contents = contents(source, relative, settings)
+
+      if generated?(source, contents) do
+        [{destination(path, relative), contents}]
+      else
+        []
+      end
+    end)
+  end
+
+  defp generated?(source, contents) do
+    not String.ends_with?(source, ".eex") or String.trim(contents) != ""
   end
 
   defp selected(settings, scope) do

@@ -33,8 +33,10 @@ defmodule ElixirBaseline.Config do
 
   @group_option [
     group: [
-      type: :atom,
-      doc: "The group defined under `defaults` this repo belongs to."
+      type: {:or, [:atom, {:list, :atom}]},
+      doc: """
+      References one or multiple groups defined under `defaults`.
+      """
     ]
   ]
 
@@ -119,16 +121,18 @@ defmodule ElixirBaseline.Config do
     end
   end
 
-  # `group` names an entry under `defaults`, so a name that is not one there
-  # resolves to no defaults at all rather than to the ones that were meant.
-  defp group!(spec, defaults, context) do
-    group = spec[:group]
+  defp groups(spec), do: List.wrap(spec[:group])
 
-    cond do
-      group == :all -> raise ArgumentError, reserved_group(context)
-      is_nil(group) or Keyword.has_key?(defaults, group) -> spec
-      true -> raise ArgumentError, unknown_group(context, group, defaults)
-    end
+  defp group!(spec, defaults, context) do
+    Enum.each(groups(spec), fn group ->
+      cond do
+        group == :all -> raise ArgumentError, reserved_group(context)
+        Keyword.has_key?(defaults, group) -> :ok
+        true -> raise ArgumentError, unknown_group(context, group, defaults)
+      end
+    end)
+
+    spec
   end
 
   defp reserved_group(context) do
@@ -278,7 +282,9 @@ defmodule ElixirBaseline.Config do
     spec = base |> merge(spec) |> Keyword.delete(:projects)
 
     [@defaults, defaults]
-    |> Enum.flat_map(&[&1[:all], &1[spec[:group]]])
+    |> Enum.flat_map(fn level ->
+      [level[:all] | Enum.map(groups(spec), &level[&1])]
+    end)
     |> Enum.reject(&is_nil/1)
     |> Enum.reduce([], &merge(&2, &1))
     |> merge(spec)

@@ -259,10 +259,35 @@ defmodule ElixirBaseline.ConfigTest do
   end
 
   @tag :tmp_dir
+  test "folds several groups in the order they are written", %{tmp_dir: dir} do
+    manifest = [
+      defaults: [
+        all: [owner: "acme", line_length: 80, extra: [ci: "basic"]],
+        application: [line_length: 98, extra: [ci: "deploy", sobelow: true]],
+        phoenix: [extra: [ci: "assets"]]
+      ],
+      repos: [
+        api: [group: :application],
+        web: [group: [:application, :phoenix]],
+        legacy: [group: [:phoenix, :application]]
+      ]
+    ]
+
+    assert [api, web, legacy] = repos(dir, manifest)
+
+    assert {98, [ci: "deploy", sobelow: true]} == {api.line_length, api.extra}
+
+    assert web.line_length == 98
+    assert Enum.sort(web.extra) == [ci: "assets", sobelow: true]
+
+    assert Enum.sort(legacy.extra) == [ci: "deploy", sobelow: true]
+  end
+
+  @tag :tmp_dir
   test "rejects a group that is not defined under defaults", %{tmp_dir: dir} do
     on_repo = [
       defaults: [all: [owner: "a"], library: []],
-      repos: [r: [group: :libary]]
+      repos: [r: [group: [:library, :libary]]]
     ]
 
     on_project = [
