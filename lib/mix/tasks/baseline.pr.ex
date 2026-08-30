@@ -10,13 +10,20 @@ defmodule Mix.Tasks.Baseline.Pr do
   is needed and nothing you are working on is touched. Repos that already match
   are not cloned at all.
 
+  Drift is measured against the default branch. If there is an open pull request
+  with the proposed changes already, the task proposes the changes again until
+  the PR is merged. Declining a file under `--interactive` does not affect open
+  PRs.
+
   ## Command line options
 
     * `--repo` - update only this repo. May be given more than once.
     * `--config` - path to the config. Defaults to `.baseline.exs`.
     * `--dry-run` - report what would change and write nothing. Needs no clone,
       so it costs one request per generated file.
-    * `--diff` - with `--dry-run`, print the changed lines rather than a count.
+    * `--interactive` - confirm each suggested update before it is written.
+    * `--diff` - with `--dry-run` or `--interactive`, print the changed lines
+      rather than a count.
   """
 
   use Mix.Task
@@ -27,33 +34,70 @@ defmodule Mix.Tasks.Baseline.Pr do
   alias ElixirBaseline.Options
   alias ElixirBaseline.Render
 
-  @switches [repo: :keep, config: :string, dry_run: :boolean, diff: :boolean]
+  @switches [
+    repo: :keep,
+    config: :string,
+    dry_run: :boolean,
+    diff: :boolean,
+    interactive: :boolean
+  ]
 
   @branch "baseline/update"
   @subject "update generated files from elixir_baseline"
 
+  @indent "  "
+
   @impl Mix.Task
   def run(argv) do
     {opts, _} = OptionParser.parse!(argv, strict: @switches)
+    validate!(opts)
 
     specs = Config.repos(Options.repos(opts))
     if specs == [], do: Mix.raise("no configured repos matched")
 
-    if opts[:dry_run], do: dry_run(specs, opts), else: propose_all(specs)
+    if opts[:dry_run], do: dry_run(specs, opts), else: propose_all(specs, opts)
   end
 
-  defp propose_all(specs) do
+  defp validate!(opts) do
+    if opts[:dry_run] && opts[:interactive] do
+      Mix.raise("--dry-run writes nothing, so there is nothing to confirm")
+    end
+
+    if opts[:interactive] && not terminal?() do
+      Mix.raise("--interactive needs a terminal")
+    end
+  end
+
+  defp terminal? do
+    Keyword.get(:io.getopts(:standard_io), :stdin) == true
+  end
+
+  defp propose_all(specs, opts) do
     results =
       for spec <- specs do
         IO.write("#{spec.name}: ")
-        outcome = propose(spec)
+        outcome = propose(spec, opts)
         Mix.shell().info(line(outcome))
         {spec.name, outcome}
       end
 
+    report_declined(results)
+
     failed = for {name, {:error, _reason}} <- results, do: name
     if failed != [], do: Mix.raise("could not read #{Enum.join(failed, ", ")}")
   end
+
+  defp report_declined(results) do
+    declined = Enum.sum(for {_name, outcome} <- results, do: declined(outcome))
+
+    if declined > 0 do
+      Mix.shell().info("\n#{declined} file(s) declined and left as they are.")
+    end
+  end
+
+  defp declined({:declined, count}), do: count
+  defp declined({:partial, _outcome, count}), do: count
+  defp declined(_outcome), do: 0
 
   defp dry_run(specs, opts) do
     changed =
@@ -100,21 +144,55 @@ defmodule Mix.Tasks.Baseline.Pr do
   defp line({:up_to_date, url}), do: "up to date #{url}"
   defp line({:pull_request, url}), do: url
   defp line({:error, reason}), do: "error -- #{reason}"
+  defp line({:declined, count}), do: "#{count} file(s) declined, nothing done"
 
-  defp propose(spec) do
+  defp line({:partial, outcome, count}) do
+    "#{line(outcome)} -- #{count} file(s) declined"
+  end
+
+  defp propose(spec, opts) do
     findings = Check.run(spec)
     errors = for {_path, {:error, reason}} <- findings, do: reason
 
     cond do
       errors != [] -> {:error, hd(errors)}
       Check.ok?(findings) -> :unchanged
-      true -> update(spec)
+      opts[:interactive] -> confirm(spec, findings, opts[:diff])
+      true -> update(spec, [])
     end
   end
 
-  defp update(spec) do
+  defp confirm(spec, findings, diff?) do
+    Mix.shell().info("")
+
+    {accepted, declined} =
+      findings
+      |> Enum.reject(fn {_path, finding} -> finding == :ok end)
+      |> Enum.split_with(fn {path, finding} -> ask(path, finding, diff?) end)
+
+    IO.write(@indent)
+    outcome(spec, accepted, declined)
+  end
+
+  defp ask(path, finding, diff?) do
+    Mix.shell().info("#{@indent}#{path}  #{summary(finding)}")
+    if diff?, do: Mix.shell().info(detail(finding))
+
+    Mix.shell().yes?("#{@indent}Update #{path}?")
+  end
+
+  defp outcome(_spec, [], declined), do: {:declined, length(declined)}
+  defp outcome(spec, _accepted, []), do: update(spec, [])
+
+  defp outcome(spec, _accepted, declined) do
+    paths = for {path, _finding} <- declined, do: path
+
+    {:partial, update(spec, paths), length(declined)}
+  end
+
+  defp update(spec, declined) do
     dir = Path.join(System.tmp_dir!(), "baseline-#{spec.name}-#{unique()}")
-    files = Render.files(spec)
+    files = spec |> Render.files() |> Map.drop(declined)
 
     try do
       IO.write("cloning... ")
