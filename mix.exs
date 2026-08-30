@@ -22,7 +22,8 @@ defmodule ElixirBaseline.MixProject do
   defp deps do
     [
       {:credo, "== 1.7.19", only: [:dev, :test], runtime: false},
-      {:nimble_options, "~> 1.1"}
+      {:nimble_options, "~> 1.1"},
+      {:sourceror, "~> 1.10"}
     ]
   end
 end

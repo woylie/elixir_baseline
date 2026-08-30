@@ -6,6 +6,7 @@ defmodule ElixirBaseline.Check do
   alias ElixirBaseline.Config
   alias ElixirBaseline.Diff
   alias ElixirBaseline.GH
+  alias ElixirBaseline.Patch
   alias ElixirBaseline.Render
 
   @workflow ~r{^\.github/workflows/[^/]+\.ya?ml$}
@@ -15,6 +16,7 @@ defmodule ElixirBaseline.Check do
           :ok
           | {:missing, String.t()}
           | {:differs, Diff.t()}
+          | {:unpatchable, String.t()}
           | {:error, String.t()}
 
   @doc """
@@ -29,11 +31,23 @@ defmodule ElixirBaseline.Check do
   @spec run(map, (String.t() -> GH.result())) :: [{String.t(), finding}]
   def run(spec, fetcher \\ &GH.get/1) do
     spec
-    |> Render.files()
+    |> targets()
     |> Enum.sort()
-    |> Enum.map(fn {path, expected} ->
-      {path, compare(path, fetch(spec, path, fetcher), expected)}
+    |> Enum.map(fn {path, target} ->
+      {path, compare(path, fetch(spec, path, fetcher), target)}
     end)
+  end
+
+  defp targets(spec) do
+    generated =
+      for {path, expected} <- Render.files(spec),
+          do: {path, {:generated, expected}}
+
+    patched =
+      for {path, patches} <- Patch.files(spec),
+          do: {path, {:patched, patches}}
+
+    generated ++ patched
   end
 
   @doc """
@@ -58,7 +72,7 @@ defmodule ElixirBaseline.Check do
     end
   end
 
-  defp compare(path, {:ok, actual}, expected) do
+  defp compare(path, {:ok, actual}, {:generated, expected}) do
     if same?(path, actual, expected) do
       :ok
     else
@@ -66,8 +80,22 @@ defmodule ElixirBaseline.Check do
     end
   end
 
-  defp compare(_path, :missing, expected), do: {:missing, expected}
-  defp compare(_path, finding, _expected), do: finding
+  defp compare(_path, {:ok, actual}, {:patched, patches}) do
+    case Patch.apply(patches, actual) do
+      {:ok, ^actual} -> :ok
+      {:ok, patched} -> {:differs, Diff.lines(actual, patched)}
+      {:error, reason} -> {:unpatchable, reason}
+    end
+  end
+
+  defp compare(_path, :missing, {:generated, expected}),
+    do: {:missing, expected}
+
+  defp compare(_path, :missing, {:patched, _patches}) do
+    {:unpatchable, "there is no file to patch"}
+  end
+
+  defp compare(_path, finding, _target), do: finding
 
   # A trailing newline is not drift in a text file, but a template copied
   # verbatim can be any bytes, and those are compared as they are.

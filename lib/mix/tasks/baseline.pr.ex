@@ -32,6 +32,7 @@ defmodule Mix.Tasks.Baseline.Pr do
   alias ElixirBaseline.Config
   alias ElixirBaseline.Diff
   alias ElixirBaseline.Options
+  alias ElixirBaseline.Patch
   alias ElixirBaseline.Render
 
   @switches [
@@ -131,12 +132,14 @@ defmodule Mix.Tasks.Baseline.Pr do
     "would change, +#{added} -#{removed}"
   end
 
+  defp summary({:unpatchable, reason}), do: "needs a hand -- #{reason}"
   defp summary({:error, reason}), do: "error -- #{reason}"
 
   defp creation(expected), do: Diff.lines("", expected)
 
   defp detail({:missing, expected}), do: expected |> creation() |> Diff.format()
   defp detail({:differs, diff}), do: Diff.format(diff)
+  defp detail({:unpatchable, _reason}), do: ""
   defp detail({:error, _reason}), do: ""
 
   defp line(:unchanged), do: "unchanged"
@@ -145,6 +148,10 @@ defmodule Mix.Tasks.Baseline.Pr do
   defp line({:pull_request, url}), do: url
   defp line({:error, reason}), do: "error -- #{reason}"
   defp line({:declined, count}), do: "#{count} file(s) declined, nothing done"
+
+  defp line({:unfixable, count}) do
+    "#{count} file(s) need a hand -- see mix baseline.check"
+  end
 
   defp line({:partial, outcome, count}) do
     "#{line(outcome)} -- #{count} file(s) declined"
@@ -155,11 +162,31 @@ defmodule Mix.Tasks.Baseline.Pr do
     errors = for {_path, {:error, reason}} <- findings, do: reason
 
     cond do
-      errors != [] -> {:error, hd(errors)}
-      Check.ok?(findings) -> :unchanged
-      opts[:interactive] -> confirm(spec, findings, opts[:diff])
-      true -> update(spec, [])
+      errors != [] ->
+        {:error, hd(errors)}
+
+      Check.ok?(findings) ->
+        :unchanged
+
+      fixable(findings) == [] ->
+        {:unfixable, length(findings) - matching(findings)}
+
+      opts[:interactive] ->
+        confirm(spec, findings, opts[:diff])
+
+      true ->
+        update(spec, [])
     end
+  end
+
+  defp fixable(findings) do
+    Enum.reject(findings, fn {_path, finding} ->
+      finding == :ok or match?({:unpatchable, _reason}, finding)
+    end)
+  end
+
+  defp matching(findings) do
+    Enum.count(findings, fn {_path, finding} -> finding == :ok end)
   end
 
   defp confirm(spec, findings, diff?) do
@@ -167,7 +194,7 @@ defmodule Mix.Tasks.Baseline.Pr do
 
     {accepted, declined} =
       findings
-      |> Enum.reject(fn {_path, finding} -> finding == :ok end)
+      |> fixable()
       |> Enum.split_with(fn {path, finding} -> ask(path, finding, diff?) end)
 
     IO.write(@indent)
@@ -193,15 +220,38 @@ defmodule Mix.Tasks.Baseline.Pr do
   defp update(spec, declined) do
     dir = Path.join(System.tmp_dir!(), "baseline-#{spec.name}-#{unique()}")
     files = spec |> Render.files() |> Map.drop(declined)
+    patches = spec |> Patch.files() |> Map.drop(declined)
 
     try do
       IO.write("cloning... ")
       clone!(spec, dir)
       start_branch(dir)
       write!(dir, files)
-      publish(dir, Map.keys(files))
+      publish(dir, Map.keys(files) ++ patch!(dir, patches))
     after
       File.rm_rf!(dir)
+    end
+  end
+
+  defp patch!(dir, patches) do
+    Enum.flat_map(patches, fn {path, ops} ->
+      target = Path.join(dir, path)
+
+      case File.read(target) do
+        {:ok, contents} -> write_patched(target, path, ops, contents)
+        {:error, _reason} -> []
+      end
+    end)
+  end
+
+  defp write_patched(target, path, ops, contents) do
+    case Patch.apply(ops, contents) do
+      {:ok, patched} ->
+        File.write!(target, patched)
+        [path]
+
+      {:error, _reason} ->
+        []
     end
   end
 

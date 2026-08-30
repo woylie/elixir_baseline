@@ -78,6 +78,7 @@ defmodule Mix.Tasks.Baseline.Check do
 
   defp describe(:ok), do: "ok"
   defp describe({:missing, _expected}), do: "missing"
+  defp describe({:unpatchable, reason}), do: "needs a hand -- #{reason}"
   defp describe({:error, reason}), do: "error -- #{reason}"
 
   defp describe({:differs, diff}) do
