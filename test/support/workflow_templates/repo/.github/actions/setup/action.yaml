@@ -1,0 +1,8 @@
+name: Setup
+
+runs:
+  using: composite
+  steps:
+    - uses: erlef/setup-beam@5304e04ea2b355f03681464e683d92e3b2f18451 # v1.18.2
+      with:
+        version-type: strict

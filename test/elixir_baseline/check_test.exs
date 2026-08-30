@@ -5,6 +5,7 @@ defmodule ElixirBaseline.CheckTest do
   alias ElixirBaseline.Render
 
   @templates [Path.expand("../support/templates", __DIR__)]
+  @workflows [Path.expand("../support/workflow_templates", __DIR__)]
 
   @project %{
     name: :spek,
@@ -20,6 +21,12 @@ defmodule ElixirBaseline.CheckTest do
 
   @spek %{@project | projects: [@root]}
   @nested %{@spek | projects: [@root, @demo]}
+  @workflow %{@project | templates: @workflows}
+
+  @ci ".github/workflows/ci.yaml"
+  @action ".github/actions/setup/action.yaml"
+  @pin "3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1"
+  @newer "c2b5f1a0e4d3927f6a8b1c0d5e4f3a2b1c0d9e8f # v7.1.0"
 
   defp rendered(spec, path), do: spec |> Render.files() |> Map.fetch!(path)
 
@@ -92,6 +99,60 @@ defmodule ElixirBaseline.CheckTest do
 
       assert [{".credo.exs", :ok}, {"demo/.credo.exs", {:missing, _}}] =
                Check.run(@nested, fetcher)
+    end
+
+    test "is ok when a workflow is pinned newer than the template" do
+      bumped = @workflow |> rendered(@ci) |> String.replace(@pin, @newer)
+
+      fetcher =
+        stub_all(%{@ci => bumped, @action => rendered(@workflow, @action)})
+
+      assert {@ci, :ok} in Check.run(@workflow, fetcher)
+    end
+
+    test "is ok when a workflow is pinned to a tag rather than a digest" do
+      unpinned =
+        @workflow |> rendered(@ci) |> String.replace(@pin, "v7")
+
+      fetcher =
+        stub_all(%{@ci => unpinned, @action => rendered(@workflow, @action)})
+
+      assert {@ci, :ok} in Check.run(@workflow, fetcher)
+    end
+
+    test "reports a workflow that differs in a step, pins included" do
+      changed =
+        @workflow
+        |> rendered(@ci)
+        |> String.replace(@pin, @newer)
+        |> String.replace(
+          "persist-credentials: false",
+          "persist-credentials: true"
+        )
+
+      fetcher =
+        stub_all(%{@ci => changed, @action => rendered(@workflow, @action)})
+
+      assert {@ci, {:differs, diff}} =
+               Enum.find(Check.run(@workflow, fetcher), &match?({@ci, _}, &1))
+
+      assert ElixirBaseline.Diff.counts(diff) == {2, 2}
+    end
+
+    test "reports a pin outside .github/workflows as drift" do
+      bumped =
+        @workflow
+        |> rendered(@action)
+        |> String.replace("5304e04ea2b355f03681464e683d92e3b2f18451", "aaaa111")
+
+      fetcher =
+        stub_all(%{@ci => rendered(@workflow, @ci), @action => bumped})
+
+      assert {@action, {:differs, _}} =
+               Enum.find(
+                 Check.run(@workflow, fetcher),
+                 &match?({@action, _}, &1)
+               )
     end
   end
 

@@ -8,6 +8,9 @@ defmodule ElixirBaseline.Check do
   alias ElixirBaseline.GH
   alias ElixirBaseline.Render
 
+  @workflow ~r{^\.github/workflows/[^/]+\.ya?ml$}
+  @uses_ref ~r{(uses:\s*\S+?)@\S+(\s*#.*)?$}m
+
   @type finding ::
           :ok
           | {:missing, String.t()}
@@ -29,7 +32,7 @@ defmodule ElixirBaseline.Check do
     |> Render.files()
     |> Enum.sort()
     |> Enum.map(fn {path, expected} ->
-      {path, compare(fetch(spec, path, fetcher), expected)}
+      {path, compare(path, fetch(spec, path, fetcher), expected)}
     end)
   end
 
@@ -55,24 +58,32 @@ defmodule ElixirBaseline.Check do
     end
   end
 
-  defp compare({:ok, actual}, expected) do
-    if same?(actual, expected) do
+  defp compare(path, {:ok, actual}, expected) do
+    if same?(path, actual, expected) do
       :ok
     else
       {:differs, Diff.lines(actual, expected)}
     end
   end
 
-  defp compare(:missing, expected), do: {:missing, expected}
-  defp compare(finding, _expected), do: finding
+  defp compare(_path, :missing, expected), do: {:missing, expected}
+  defp compare(_path, finding, _expected), do: finding
 
   # A trailing newline is not drift in a text file, but a template copied
   # verbatim can be any bytes, and those are compared as they are.
-  defp same?(actual, expected) do
+  defp same?(path, actual, expected) do
     if String.valid?(actual) and String.valid?(expected) do
-      String.trim(actual) == String.trim(expected)
+      String.trim(owned(path, actual)) == String.trim(owned(path, expected))
     else
       actual == expected
+    end
+  end
+
+  defp owned(path, contents) do
+    if Regex.match?(@workflow, path) do
+      String.replace(contents, @uses_ref, "\\1")
+    else
+      contents
     end
   end
 end
