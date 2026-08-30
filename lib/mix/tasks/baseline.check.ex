@@ -16,60 +16,58 @@ defmodule Mix.Tasks.Baseline.Check do
   alias ElixirBaseline.Config
   alias ElixirBaseline.Diff
   alias ElixirBaseline.Options
+  alias ElixirBaseline.Render
 
   @switches [repo: :keep, config: :string]
 
   @indent "  "
 
+  @concurrency 4
+
   @impl Mix.Task
   def run(argv) do
     {opts, _} = OptionParser.parse!(argv, strict: @switches)
 
+    specs = Config.repos(Options.repos(opts))
+    if specs == [], do: Mix.raise("no configured repos matched")
+
+    width = width(specs)
+
     results =
-      for spec <- Config.repos(Options.repos(opts)) do
-        {spec, Check.run(spec)}
-      end
+      specs
+      |> Task.async_stream(&{&1, Check.run(&1)},
+        ordered: true,
+        max_concurrency: @concurrency,
+        timeout: :infinity
+      )
+      |> Enum.map(fn {:ok, {spec, findings} = result} ->
+        report(spec, findings, width)
+        result
+      end)
 
-    if results == [], do: Mix.raise("no configured repos matched")
-
-    summarise(results, report(results))
+    summarise(results)
   end
 
-  defp report(results) do
-    drifted =
-      results
-      |> Enum.map(fn {spec, findings} ->
-        {spec, Enum.reject(findings, &ok?/1)}
-      end)
-      |> Enum.reject(fn {_spec, findings} -> findings == [] end)
-
-    width = width(drifted)
-
-    Enum.each(drifted, fn {spec, findings} ->
-      Mix.shell().info(entry(Config.slug(spec), findings, width))
-    end)
-
-    drifted != []
+  defp report(spec, findings, width) do
+    case Enum.reject(findings, &ok?/1) do
+      [] -> :ok
+      drifted -> Mix.shell().info(entry(Config.slug(spec), drifted, width))
+    end
   end
 
   defp ok?({_path, finding}), do: finding == :ok
 
-  defp width([]), do: 0
+  defp width(specs) do
+    specs
+    |> Enum.flat_map(fn spec ->
+      paths = spec |> Render.files() |> Map.keys()
 
-  defp width(drifted) do
-    drifted
-    |> Enum.flat_map(fn {spec, findings} ->
-      [
-        Config.slug(spec)
-        | Enum.map(findings, fn {path, _} -> @indent <> path end)
-      ]
+      [Config.slug(spec) | Enum.map(paths, &(@indent <> &1))]
     end)
     |> Enum.map(&String.length/1)
     |> Enum.max()
   end
 
-  # Only what drifted is worth a line, and the file it drifted in is named
-  # under the repo, so that a subproject is as visible as the repo it sits in.
   defp entry(slug, findings, width) do
     Enum.reduce(findings, slug, fn {path, finding}, acc ->
       acc <> "\n" <> pad(@indent <> path, width) <> describe(finding)
@@ -88,11 +86,11 @@ defmodule Mix.Tasks.Baseline.Check do
     "differs -- +#{added} -#{removed}"
   end
 
-  defp summarise(results, reported?) do
+  defp summarise(results) do
     findings = Enum.flat_map(results, fn {_spec, findings} -> findings end)
     drifted = Enum.reject(findings, &ok?/1)
     matching = length(findings) - length(drifted)
-    lead = if reported?, do: "\n", else: ""
+    lead = if drifted == [], do: "", else: "\n"
 
     Mix.shell().info(
       "#{lead}#{matching}/#{length(findings)} files match the baseline."
