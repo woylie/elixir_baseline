@@ -8,6 +8,7 @@
       line_length: 80
     ],
     library: [
+      exclude: ["repo/.github/workflows/hadolint.yaml"],
       extra: [renovate_presets: ["github>woylie/renovate-presets:library"]]
     ],
     application: [
