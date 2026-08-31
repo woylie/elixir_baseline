@@ -1,8 +1,12 @@
 defmodule Mix.Tasks.Baseline.Check do
-  @shortdoc "Reports which generated files have drifted from the baseline"
+  @shortdoc "Reports which generated files and GitHub settings have drifted"
 
   @moduledoc """
-  Reports whether the files each enrolled repo generates match its templates.
+  Reports whether the files each enrolled repo generates match its templates,
+  and whether its GitHub settings match the baseline.
+
+  A drifted file is fixed by `mix baseline.pr`. A drifted setting is changed in
+  GitHub, so the two are counted apart.
 
   ## Command line options
 
@@ -13,6 +17,7 @@ defmodule Mix.Tasks.Baseline.Check do
   use Mix.Task
 
   alias ElixirBaseline.Check
+  alias ElixirBaseline.Check.Settings
   alias ElixirBaseline.Config
   alias ElixirBaseline.Diff
   alias ElixirBaseline.Options
@@ -35,13 +40,13 @@ defmodule Mix.Tasks.Baseline.Check do
 
     results =
       specs
-      |> Task.async_stream(&{&1, Check.run(&1)},
+      |> Task.async_stream(&{&1, Check.run(&1), Settings.run(&1)},
         ordered: true,
         max_concurrency: @concurrency,
         timeout: :infinity
       )
-      |> Enum.map(fn {:ok, {spec, findings} = result} ->
-        report(spec, findings, width)
+      |> Enum.map(fn {:ok, {spec, files, settings} = result} ->
+        report(spec, files ++ settings, width)
         result
       end)
 
@@ -49,30 +54,44 @@ defmodule Mix.Tasks.Baseline.Check do
   end
 
   defp report(spec, findings, width) do
-    case Enum.reject(findings, &ok?/1) do
+    case Enum.reject(findings, &quiet?/1) do
       [] -> :ok
       drifted -> Mix.shell().info(entry(Config.slug(spec), drifted, width))
     end
   end
 
-  defp ok?({_path, finding}), do: finding == :ok
+  defp ok?({_label, finding}), do: finding == :ok
+
+  defp quiet?({_label, finding}) do
+    finding == :ok or match?({:skipped, _reason}, finding)
+  end
+
+  defp skipped?({_label, finding}), do: match?({:skipped, _reason}, finding)
 
   defp width(specs) do
     specs
     |> Enum.flat_map(fn spec ->
       paths = spec |> Render.files() |> Map.keys()
 
-      [Config.slug(spec) | Enum.map(paths, &(@indent <> &1))]
+      [
+        Config.slug(spec)
+        | Enum.map(paths ++ Settings.labels(), &(@indent <> &1))
+      ]
     end)
     |> Enum.map(&String.length/1)
     |> Enum.max()
   end
 
   defp entry(slug, findings, width) do
-    Enum.reduce(findings, slug, fn {path, finding}, acc ->
-      acc <> "\n" <> pad(@indent <> path, width) <> describe(finding)
+    Enum.reduce(findings, slug, fn {label, finding}, acc ->
+      acc <>
+        "\n" <>
+        pad(@indent <> label, width) <> describe(finding) <> remedy(finding)
     end)
   end
+
+  defp remedy({:drift, _state, remedy}), do: "\n#{@indent}#{@indent}#{remedy}"
+  defp remedy(_finding), do: ""
 
   defp pad(label, width), do: String.pad_trailing(label, width + 2)
 
@@ -87,18 +106,51 @@ defmodule Mix.Tasks.Baseline.Check do
     "differs -- +#{added} -#{removed}"
   end
 
+  defp describe({:drift, state, _remedy}), do: state
+
   defp summarise(results) do
-    findings = Enum.flat_map(results, fn {_spec, findings} -> findings end)
-    drifted = Enum.reject(findings, &ok?/1)
-    matching = length(findings) - length(drifted)
-    lead = if drifted == [], do: "", else: "\n"
+    files = Enum.flat_map(results, fn {_spec, files, _settings} -> files end)
+
+    settings =
+      Enum.flat_map(results, fn {_spec, _files, settings} -> settings end)
+
+    lead = if drifted(files) + drifted(settings) == 0, do: "", else: "\n"
 
     Mix.shell().info(
-      "#{lead}#{matching}/#{length(findings)} files match the baseline."
+      lead <>
+        tally("files", files) <>
+        "\n" <> tally("settings", settings) <> hint(files)
     )
 
-    if drifted != [] do
-      Mix.raise("#{length(drifted)} file(s) drifted from the baseline")
+    raise_drift(files, settings)
+  end
+
+  defp drifted(findings), do: Enum.count(findings, &(not quiet?(&1)))
+
+  defp hint(files) do
+    if drifted(files) == 0 do
+      ""
+    else
+      "\n\nRun mix baseline.pr to update the files."
     end
+  end
+
+  defp raise_drift(files, settings) do
+    parts =
+      [{"file", drifted(files)}, {"setting", drifted(settings)}]
+      |> Enum.reject(fn {_kind, count} -> count == 0 end)
+      |> Enum.map(fn {kind, count} -> "#{count} #{kind}(s)" end)
+
+    if parts != [] do
+      Mix.raise("#{Enum.join(parts, " and ")} drifted from the baseline")
+    end
+  end
+
+  defp tally(kind, findings) do
+    {skipped, applicable} = Enum.split_with(findings, &skipped?/1)
+    matching = Enum.count(applicable, &ok?/1)
+    aside = if skipped == [], do: "", else: " #{length(skipped)} skipped."
+
+    "#{matching}/#{length(applicable)} #{kind} match the baseline.#{aside}"
   end
 end
