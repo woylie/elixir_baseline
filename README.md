@@ -1,11 +1,44 @@
 # Elixir Baseline
 
 Tool for sharing tooling configuration between Elixir repos. Detects drift from
-a baseline configuration and opens pull requests to fix it.
+a baseline configuration and opens pull requests to fix it, and reports the
+GitHub settings a pull request cannot fix.
 
-## Covered Tooling
+## Features
 
-- Credo configuration
+### Generated files
+
+Owned by the tool and rendered from a template. When the template is changed,
+the file in the repository is overwritten as a whole.
+
+The default templates include:
+
+- `.credo.exs`
+- `renovate.json`
+- `.github/CODEOWNERS`
+- `.github/workflows/hadolint.yaml`
+- `.github/workflows/zizmor.yaml`
+
+Pinned hashes in Github Actions workflows are not overwritten from templates.
+
+### Patched files
+
+Owned in parts and patched when settings are changed.
+
+Currently supported:
+
+- `line_length` in `.formatter.exs` (also applied in the default `.credo.exs`
+  template)
+
+### Github settings
+
+GitHub settings are read through the API and only reported.
+
+Currently supported checks:
+
+- `SECURITY.md` exists in either the repo or inherited from the owner's
+  `.github` repo. Only applied to public repositories.
+- private vulnerability reporting is enabled
 
 ## Requirements
 
@@ -41,11 +74,19 @@ gitignored in this repository.
     # You can add any number of additional groups under `defaults`. They are
     # referenced with the `group` option under `repos`.
     all: [owner: "woylie", line_length: 80],
-    library: [],
-    application: []
+    library: [
+      exclude: ["repo/.github/workflows/hadolint.yaml"],
+      extra: [renovate_presets: ["github>woylie/renovate-presets:library"]]
+    ],
+    application: [
+      extra: [renovate_presets: ["github>woylie/renovate-presets:application"]]
+    ]
   ],
   repos: [
-    doggo: [group: :library],
+    doggo: [
+      group: :library,
+      projects: [doggo: [path: "."], demo: [group: :application]]
+    ],
     spek: [group: :library]
   ]
 ]
@@ -61,10 +102,13 @@ The lookup order of the repo settings is:
 ## Usage
 
 ```
-mix baseline.check              # report which repos have drifted
+mix baseline.check              # report which files and settings have drifted
 mix baseline.check --repo spek
 mix baseline.pr                 # open a pull request per drifted repo
 mix baseline.pr --repo spek
+mix baseline.pr --dry-run       # what would change, writing nothing
+mix baseline.pr --dry-run --diff
+mix baseline.pr --interactive   # confirm each file before it is written
 ```
 
 Both tasks take `--repo`, which may be given more than once, and `--config` for
@@ -80,32 +124,39 @@ cloned shallowly into a temporary directory. Re-running is safe.
 
 ```
 $ mix baseline.check
-woylie/doggo
-  .credo.exs                  ok
-  demo/.credo.exs             differs -- 162 lines not in common
 woylie/ecto_nested_changeset
-  .credo.exs                  ok
-  example/.credo.exs          missing
-woylie/elixir_baseline        ok
-woylie/ex_icon                ok
-woylie/flop                   ok
-woylie/flop_phoenix           ok
-woylie/let_me                 ok
-woylie/spek                   ok
+  .github/workflows/zizmor.yaml    missing
+woylie/flop
+  .github/workflows/zizmor.yaml    missing
+woylie/let_me
+  .github/workflows/zizmor.yaml    missing
+woylie/spek
+  private vulnerability reporting  disabled
+    run: gh api --method PUT repos/woylie/spek/private-vulnerability-reporting
+woylie/coach
+  .github/workflows/hadolint.yaml  missing
+woylie/tuduli
+  .github/workflows/hadolint.yaml  missing
 
-8/10 files match the baseline.
-** (Mix) 2 file(s) drifted from the baseline
+51/56 files match the baseline.
+17/18 settings match the baseline. 2 skipped.
+
+Run mix baseline.pr to update the files.
+** (Mix) 5 file(s) and 1 setting(s) drifted from the baseline
 ```
 
 ```
 $ mix baseline.pr
-doggo: cloning... up to date https://github.com/woylie/doggo/pull/718
-ecto_nested_changeset: cloning... up to date https://github.com/woylie/ecto_nested_changeset/pull/457
-ex_icon: cloning... up to date https://github.com/woylie/ex_icon/pull/43
-flop: cloning... up to date https://github.com/woylie/flop/pull/717
-flop_phoenix: cloning... pushing... https://github.com/woylie/flop_phoenix/pull/469
-let_me: unchanged
+doggo: unchanged
+ecto_nested_changeset: cloning... pushing... https://github.com/woylie/ecto_nested_changeset/pull/457
+elixir_baseline: unchanged
+ex_icon: unchanged
+flop: cloning... pushing... https://github.com/woylie/flop/pull/717
+flop_phoenix: unchanged
+let_me: cloning... pushing... https://github.com/woylie/let_me/pull/213
 spek: unchanged
+coach: cloning... pushing... https://github.com/woylie/coach/pull/89
+tuduli: cloning... pushing... https://github.com/woylie/tuduli/pull/42
 ```
 
 ## Templates
