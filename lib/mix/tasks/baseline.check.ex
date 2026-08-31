@@ -22,6 +22,7 @@ defmodule Mix.Tasks.Baseline.Check do
   alias ElixirBaseline.Diff
   alias ElixirBaseline.Options
   alias ElixirBaseline.Render
+  alias ElixirBaseline.Repository
 
   @switches [repo: :keep, config: :string]
 
@@ -36,6 +37,9 @@ defmodule Mix.Tasks.Baseline.Check do
     specs = Config.repos(Options.repos(opts))
     if specs == [], do: Mix.raise("no configured repos matched")
 
+    # What GitHub says decides which files a repo generates, so the width below
+    # needs it too.
+    specs = Repository.resolve_all(specs)
     width = width(specs)
 
     results =

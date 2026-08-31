@@ -3,107 +3,88 @@ defmodule ElixirBaseline.Check.SettingsTest do
 
   alias ElixirBaseline.Check.Settings
 
-  @spek %{name: :spek, owner: "acme"}
-
   @policy "security policy"
   @reporting "private vulnerability reporting"
 
   @path "repos/acme/spek/private-vulnerability-reporting"
 
   @enable "run: gh api --method PUT #{@path}"
-  @add "add SECURITY.md to acme/.github"
+  @add "run: mix baseline.pr"
 
-  defp graphql(private, policy) do
-    fn _query, [owner: "acme", name: "spek"] ->
-      {:ok,
-       %{
-         "repository" => %{
-           "isPrivate" => private,
-           "isSecurityPolicyEnabled" => policy
-         }
-       }}
-    end
+  defp spec(resolved) do
+    Enum.into(resolved, %{name: :spek, owner: "acme", visibility: :public})
   end
 
   defp get(enabled) do
     fn @path -> {:ok, %{"enabled" => enabled}} end
   end
 
-  describe "run/3" do
+  defp unread do
+    fn _path -> flunk("fetched") end
+  end
+
+  describe "run/2" do
     test "is ok when the policy is in force and reporting is enabled" do
-      assert Settings.run(@spek, graphql(false, true), get(true)) ==
+      spec = spec(security_policy: true)
+
+      assert Settings.run(spec, get(true)) ==
                [{@policy, :ok}, {@reporting, :ok}]
     end
 
     test "says where to enable reporting that is disabled" do
-      assert Settings.run(@spek, graphql(false, true), get(false)) ==
+      spec = spec(security_policy: true)
+
+      assert Settings.run(spec, get(false)) ==
                [{@policy, :ok}, {@reporting, {:drift, "disabled", @enable}}]
     end
 
-    test "points a repo with no policy at the owner's .github repo" do
-      assert Settings.run(@spek, graphql(false, false), get(true)) ==
+    test "says how to write the policy of a repo that has none" do
+      spec = spec(security_policy: false)
+
+      assert Settings.run(spec, get(true)) ==
                [{@policy, {:drift, "none", @add}}, {@reporting, :ok}]
     end
 
-    test "skips reporting on a private repo without asking for it" do
-      get = fn path -> flunk("fetched #{path}") end
+    test "skips both settings on a private repo without asking for either" do
+      skipped = {:skipped, "private repository"}
 
-      assert Settings.run(@spek, graphql(true, true), get) ==
-               [{@policy, :ok}, {@reporting, {:skipped, "private repository"}}]
+      for policy <- [true, false] do
+        spec = spec(security_policy: policy, visibility: :private)
+
+        assert Settings.run(spec, unread()) ==
+                 [{@policy, skipped}, {@reporting, skipped}]
+      end
     end
 
-    test "checks the policy of a private repo, which inherits it" do
-      get = fn _path -> flunk("fetched") end
+    test "reports every setting when the repo could not be resolved" do
+      spec = spec(error: "\"Could not resolve\"")
 
-      assert {@policy, {:drift, "none", @add}} in Settings.run(
-               @spek,
-               graphql(true, false),
-               get
-             )
-    end
-
-    test "reports every setting when the repo cannot be read" do
-      graphql = fn _query, _variables -> {:error, "Could not resolve"} end
-      get = fn _path -> flunk("fetched") end
-
-      assert Settings.run(@spek, graphql, get) ==
+      assert Settings.run(spec, unread()) ==
                [
                  {@policy, {:error, "\"Could not resolve\""}},
                  {@reporting, {:error, "\"Could not resolve\""}}
                ]
     end
 
-    test "reports an unexpected response as an error" do
-      graphql = fn _query, _variables -> {:ok, %{"repository" => nil}} end
-      get = fn _path -> flunk("fetched") end
-
-      assert [{@policy, {:error, reason}}, {@reporting, {:error, reason}}] =
-               Settings.run(@spek, graphql, get)
-
-      assert reason =~ "unexpected response"
-    end
-
-    test "reports a renamed field as an error, not as drift" do
-      graphql = fn _query, _variables ->
-        {:ok, %{"repository" => %{"isPrivate" => false}}}
-      end
-
-      get = fn _path -> flunk("fetched") end
-
-      assert [{@policy, {:error, reason}}, {@reporting, {:error, reason}}] =
-               Settings.run(@spek, graphql, get)
-
-      assert reason =~ "unexpected response"
-    end
-
     test "reports a failed reporting request as an error" do
+      spec = spec(security_policy: true)
       get = fn @path -> {:error, {:http, 403, "Forbidden"}} end
 
-      assert Settings.run(@spek, graphql(false, true), get) ==
+      assert Settings.run(spec, get) ==
                [
                  {@policy, :ok},
                  {@reporting, {:error, "{:http, 403, \"Forbidden\"}"}}
                ]
+    end
+
+    test "reports an unexpected reporting response as an error" do
+      spec = spec(security_policy: true)
+      get = fn @path -> {:ok, %{"on" => true}} end
+
+      assert [{@policy, :ok}, {@reporting, {:error, reason}}] =
+               Settings.run(spec, get)
+
+      assert reason =~ "unexpected response"
     end
   end
 

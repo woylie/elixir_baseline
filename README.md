@@ -15,6 +15,7 @@ The default templates include:
 
 - `.credo.exs`
 - `renovate.json`
+- `SECURITY.md` (only generated for public repositories)
 - `.github/CODEOWNERS`
 - `.github/workflows/hadolint.yaml`
 - `.github/workflows/zizmor.yaml`
@@ -37,8 +38,8 @@ GitHub settings are read through the API and only reported.
 Currently supported checks:
 
 - `SECURITY.md` exists in either the repo or inherited from the owner's
-  `.github` repo. Only applied to public repositories.
-- private vulnerability reporting is enabled
+  `.github` repo (only public repositories).
+- Private vulnerability reporting is enabled (only public repositories).
 
 ## Requirements
 
@@ -73,7 +74,13 @@ gitignored in this repository.
     # The `all` group contains defaults that are applied to all repos.
     # You can add any number of additional groups under `defaults`. They are
     # referenced with the `group` option under `repos`.
-    all: [owner: "woylie", line_length: 80],
+    all: [
+      owner: "woylie",
+      line_length: 80,
+      extra: [
+        security_contacts: ["[Contact form](https://example.com/contact)"]
+      ]
+    ],
     library: [
       exclude: ["repo/.github/workflows/hadolint.yaml"],
       extra: [renovate_presets: ["github>woylie/renovate-presets:library"]]
@@ -126,37 +133,39 @@ cloned shallowly into a temporary directory. Re-running is safe.
 $ mix baseline.check
 woylie/ecto_nested_changeset
   .github/workflows/zizmor.yaml    missing
+  SECURITY.md                      missing
+woylie/elixir_baseline
+  SECURITY.md                      missing
+woylie/ex_icon
+  SECURITY.md                      missing
 woylie/flop
   .github/workflows/zizmor.yaml    missing
+  SECURITY.md                      missing
 woylie/let_me
   .github/workflows/zizmor.yaml    missing
+  SECURITY.md                      missing
 woylie/spek
+  SECURITY.md                      missing
   private vulnerability reporting  disabled
     run: gh api --method PUT repos/woylie/spek/private-vulnerability-reporting
-woylie/coach
-  .github/workflows/hadolint.yaml  missing
-woylie/tuduli
-  .github/workflows/hadolint.yaml  missing
 
-51/56 files match the baseline.
-17/18 settings match the baseline. 2 skipped.
+43/52 files match the baseline.
+15/16 settings match the baseline.
 
 Run mix baseline.pr to update the files.
-** (Mix) 5 file(s) and 1 setting(s) drifted from the baseline
+** (Mix) 9 file(s) and 1 setting(s) drifted from the baseline
 ```
 
 ```
 $ mix baseline.pr
 doggo: unchanged
 ecto_nested_changeset: cloning... pushing... https://github.com/woylie/ecto_nested_changeset/pull/457
-elixir_baseline: unchanged
-ex_icon: unchanged
+elixir_baseline: cloning... pushing... https://github.com/woylie/elixir_baseline/pull/12
+ex_icon: cloning... pushing... https://github.com/woylie/ex_icon/pull/28
 flop: cloning... pushing... https://github.com/woylie/flop/pull/717
 flop_phoenix: unchanged
 let_me: cloning... pushing... https://github.com/woylie/let_me/pull/213
-spek: unchanged
-coach: cloning... pushing... https://github.com/woylie/coach/pull/89
-tuduli: cloning... pushing... https://github.com/woylie/tuduli/pull/42
+spek: cloning... pushing... https://github.com/woylie/spek/pull/71
 ```
 
 ## Templates

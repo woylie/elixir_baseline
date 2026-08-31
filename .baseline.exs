@@ -5,7 +5,15 @@
     # referenced with the `group` option under `repos`.
     all: [
       owner: "woylie",
-      line_length: 80
+      line_length: 80,
+      extra: [
+        security_contacts: [
+          "[Keybase](https://keybase.io/woylie)",
+          "[Contact form](https://mathiaspolligkeit.com)",
+          "[Elixir Slack](https://elixir-lang.slack.com/team/U30GMFN83) \
+(private message, username: woylie)"
+        ]
+      ]
     ],
     library: [
       exclude: ["repo/.github/workflows/hadolint.yaml"],

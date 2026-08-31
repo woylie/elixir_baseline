@@ -34,6 +34,7 @@ defmodule Mix.Tasks.Baseline.Pr do
   alias ElixirBaseline.Options
   alias ElixirBaseline.Patch
   alias ElixirBaseline.Render
+  alias ElixirBaseline.Repository
 
   @switches [
     repo: :keep,
@@ -55,6 +56,8 @@ defmodule Mix.Tasks.Baseline.Pr do
 
     specs = Config.repos(Options.repos(opts))
     if specs == [], do: Mix.raise("no configured repos matched")
+
+    specs = Repository.resolve_all(specs)
 
     if opts[:dry_run], do: dry_run(specs, opts), else: propose_all(specs, opts)
   end
