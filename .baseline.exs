@@ -9,6 +9,7 @@
       conditions: %{
         "repo/.github/workflows/hadolint.yaml" => {:exists, "Dockerfile"}
       },
+      seed: ["project/.sobelow-conf"],
       extra: [
         security_contacts: [
           "[Keybase](https://keybase.io/woylie)",
@@ -19,6 +20,7 @@
       ]
     ],
     library: [
+      exclude: ["project/.sobelow-conf"],
       extra: [renovate_presets: ["github>woylie/renovate-presets:library"]]
     ],
     application: [
