@@ -11,8 +11,11 @@ defmodule ElixirBaseline.Check.Settings do
   Each check states its own remedy, because a setting cannot be fixed by
   re-running a task and where to change it differs per setting.
 
-  A setting that does not exist on a repo is `:skipped`, never drift. Both are
-  public-only.
+  A setting that does not exist on a repo is `:skipped`, never drift. All three
+  are public-only.
+
+  The secrets endpoint answers with names and never with values, so nothing
+  here can print one.
   """
 
   alias ElixirBaseline.Config
@@ -28,8 +31,9 @@ defmodule ElixirBaseline.Check.Settings do
 
   @policy "security policy"
   @reporting "private vulnerability reporting"
+  @secrets "repository secrets"
 
-  @labels [@policy, @reporting]
+  @labels [@policy, @reporting, @secrets]
 
   @doc """
   Returns one finding per setting, ordered as `labels/0` is.
@@ -39,7 +43,11 @@ defmodule ElixirBaseline.Check.Settings do
   """
   @spec run(map, get) :: [{String.t(), finding}]
   def run(spec, get \\ &GH.get/1) do
-    [{@policy, policy(spec)}, {@reporting, reporting(spec, get)}]
+    [
+      {@policy, policy(spec)},
+      {@reporting, reporting(spec, get)},
+      {@secrets, secrets(spec, get)}
+    ]
   end
 
   @doc """
@@ -93,5 +101,39 @@ defmodule ElixirBaseline.Check.Settings do
 
   defp reporting_path(spec) do
     "repos/#{Config.slug(spec)}/private-vulnerability-reporting"
+  end
+
+  defp secrets(%{error: reason}, _get), do: {:error, reason}
+
+  # A private repo's workflows can only be changed by a collaborator, so a
+  # secret there is not exposed the way the same secret in a public repo is.
+  defp secrets(%{visibility: :private}, _get) do
+    {:skipped, "private repository"}
+  end
+
+  # Every job in the repo can read a repository secret, so in a public repo any
+  # workflow change that gets merged runs with it. A secret belongs in an
+  # environment, which gates it behind the reviewers that environment requires.
+  defp secrets(spec, get) do
+    case get.("repos/#{Config.slug(spec)}/actions/secrets") do
+      {:ok, %{"secrets" => []}} ->
+        :ok
+
+      {:ok, %{"secrets" => secrets}} when is_list(secrets) ->
+        {:drift, ungated(secrets),
+         "move each secret into an environment with required reviewers"}
+
+      {:ok, other} ->
+        {:error, "unexpected response: #{inspect(other)}"}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  end
+
+  defp ungated(secrets) do
+    names = for %{"name" => name} <- secrets, do: name
+
+    "#{length(names)} ungated: #{names |> Enum.sort() |> Enum.join(", ")}"
   end
 end

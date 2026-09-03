@@ -41,6 +41,11 @@ Currently supported checks:
 - `SECURITY.md` exists in either the repo or inherited from the owner's
   `.github` repo (only public repositories).
 - Private vulnerability reporting is enabled (only public repositories).
+- No Actions secret is held at the repository level (only public
+  repositories). Every job in a repository can read a repository secret. In
+  a public repository any workflow change that gets merged runs with it. A
+  secret belongs in an environment, which gates it behind the reviewers that
+  environment requires. Only secret names are read, never values.
 
 ### Unclaimed files
 
