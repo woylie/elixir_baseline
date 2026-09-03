@@ -8,7 +8,13 @@ defmodule ElixirBaseline.RenderTest do
   defp repo(projects, settings \\ []) do
     Enum.into(
       settings,
-      %{name: :r, line_length: 80, templates: @templates, projects: projects}
+      %{
+        name: :r,
+        line_length: 80,
+        templates: @templates,
+        projects: projects,
+        tree: MapSet.new()
+      }
     )
   end
 
@@ -240,6 +246,43 @@ defmodule ElixirBaseline.RenderTest do
       assert files == %{}
     end
 
+    @tag :tmp_dir
+    test "generates a conditional template only where the file it names is " <>
+           "there",
+         %{tmp_dir: dir} do
+      template!(dir, "repo/hadolint.yaml", "lint\n")
+
+      conditions = %{"repo/hadolint.yaml" => {:exists, "Dockerfile"}}
+
+      spec =
+        repo([project(templates: [dir])],
+          templates: [dir],
+          conditions: conditions
+        )
+
+      assert Render.files(spec) == %{}
+
+      assert Render.files(%{spec | tree: MapSet.new(["Dockerfile"])}) ==
+               %{"hadolint.yaml" => "lint\n"}
+    end
+
+    @tag :tmp_dir
+    test "reads a condition on a project template from the repository root",
+         %{tmp_dir: dir} do
+      template!(dir, "project/.tool-versions", "elixir 1.20\n")
+
+      conditions = %{"project/.tool-versions" => {:exists, ".mise.toml"}}
+
+      spec =
+        repo(
+          [project(path: "demo", templates: [dir], conditions: conditions)],
+          templates: [dir],
+          tree: MapSet.new([".mise.toml"])
+        )
+
+      assert Map.keys(Render.files(spec)) == ["demo/.tool-versions"]
+    end
+
     test "rejects a selected template that does not exist" do
       for option <- [:include, :exclude] do
         spec = repo([project([{option, ["project/nope"]}])])
@@ -247,6 +290,14 @@ defmodule ElixirBaseline.RenderTest do
         assert_raise ArgumentError, ~r/Unknown template in #{option}/, fn ->
           Render.files(spec)
         end
+      end
+    end
+
+    test "rejects a condition on a template that does not exist" do
+      conditions = %{"project/nope" => {:exists, "Dockerfile"}}
+
+      assert_raise ArgumentError, ~r/Unknown template in conditions/, fn ->
+        Render.files(repo([project(conditions: conditions)]))
       end
     end
 

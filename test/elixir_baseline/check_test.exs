@@ -14,7 +14,8 @@ defmodule ElixirBaseline.CheckTest do
     templates: @templates,
     line_length: 80,
     path: ".",
-    projects: []
+    projects: [],
+    tree: MapSet.new()
   }
 
   @root %{@project | line_length: 80, path: "."}
@@ -46,31 +47,37 @@ defmodule ElixirBaseline.CheckTest do
     end)
   end
 
+  defp tree(spec, paths), do: %{spec | tree: MapSet.new(paths)}
+
+  defp unread, do: fn path -> flunk("read #{path}") end
+
   defp stub(spec, contents), do: stub_all(spec, %{".credo.exs" => contents})
 
+  # The stubbed files are the repo's tree, so a read of a path the tree does
+  # not hold fails rather than answering 404.
   defp stub_all(spec, by_path) do
     files = Map.merge(formatters(spec), by_path)
 
-    fn "repos/acme/spek/contents/" <> path ->
-      case Map.fetch(files, path) do
-        {:ok, contents} -> {:ok, %{"content" => Base.encode64(contents)}}
-        :error -> {:error, {:http, 404, "Not Found"}}
-      end
+    fetcher = fn "repos/acme/spek/contents/" <> path ->
+      {:ok, %{"content" => Base.encode64(Map.fetch!(files, path))}}
     end
+
+    {tree(spec, Map.keys(files)), fetcher}
   end
 
   describe "run/2" do
     test "is ok when the file matches" do
-      fetcher = stub(@spek, rendered(@spek, ".credo.exs"))
+      {spek, fetcher} = stub(@spek, rendered(@spek, ".credo.exs"))
 
-      assert Check.run(@spek, fetcher) ==
+      assert Check.run(spek, fetcher) ==
                [{".credo.exs", :ok}, {".formatter.exs", :ok}]
     end
 
     test "is ok when only the final newline differs" do
       trimmed = @spek |> rendered(".credo.exs") |> String.trim_trailing()
+      {spek, fetcher} = stub(@spek, trimmed)
 
-      assert {".credo.exs", :ok} in Check.run(@spek, stub(@spek, trimmed))
+      assert {".credo.exs", :ok} in Check.run(spek, fetcher)
     end
 
     test "holds the difference when the file differs" do
@@ -79,35 +86,46 @@ defmodule ElixirBaseline.CheckTest do
         |> rendered(".credo.exs")
         |> String.replace("line_length: 80", "line_length: 120")
 
+      {spek, fetcher} = stub(@spek, changed)
+
       assert [{".credo.exs", {:differs, diff}}, {".formatter.exs", :ok}] =
-               Check.run(@spek, stub(@spek, changed))
+               Check.run(spek, fetcher)
 
       assert ElixirBaseline.Diff.counts(diff) == {1, 1}
     end
 
     test "holds what the template renders when the file does not exist" do
-      fetcher = fn _ -> {:error, {:http, 404, "Not Found"}} end
-
       assert [{".credo.exs", {:missing, expected}} | _rest] =
-               Check.run(@spek, fetcher)
+               Check.run(tree(@spek, []), unread())
 
       assert expected == rendered(@spek, ".credo.exs")
     end
 
     test "reports a failed request as an error, not as drift" do
+      spek = tree(@spek, [".credo.exs"])
       fetcher = fn _ -> {:error, {:http, 403, "Forbidden"}} end
 
-      assert [{".credo.exs", {:error, _}} | _rest] = Check.run(@spek, fetcher)
+      assert [{".credo.exs", {:error, _}} | _rest] = Check.run(spek, fetcher)
+    end
+
+    test "reports a repo that could not be resolved as an error per file" do
+      spek = Map.put(@spek, :error, "Not Found")
+
+      assert Check.run(spek, unread()) ==
+               [
+                 {".credo.exs", {:error, "Not Found"}},
+                 {".formatter.exs", {:error, "Not Found"}}
+               ]
     end
 
     test "reports a finding per file, ordered by path" do
-      fetcher =
+      {nested, fetcher} =
         stub_all(@nested, %{
           ".credo.exs" => rendered(@nested, ".credo.exs"),
           "demo/.credo.exs" => rendered(@nested, "demo/.credo.exs")
         })
 
-      assert Check.run(@nested, fetcher) ==
+      assert Check.run(nested, fetcher) ==
                [
                  {".credo.exs", :ok},
                  {".formatter.exs", :ok},
@@ -117,7 +135,7 @@ defmodule ElixirBaseline.CheckTest do
     end
 
     test "reports a project that has drifted on its own" do
-      fetcher =
+      {nested, fetcher} =
         stub_all(@nested, %{".credo.exs" => rendered(@nested, ".credo.exs")})
 
       assert [
@@ -125,15 +143,15 @@ defmodule ElixirBaseline.CheckTest do
                {".formatter.exs", :ok},
                {"demo/.credo.exs", {:missing, _}},
                {"demo/.formatter.exs", :ok}
-             ] = Check.run(@nested, fetcher)
+             ] = Check.run(nested, fetcher)
     end
 
     test "reports a patched file whose setting differs" do
-      fetcher = stub_all(@spek, %{".formatter.exs" => formatter(120)})
+      {spek, fetcher} = stub_all(@spek, %{".formatter.exs" => formatter(120)})
 
       assert {".formatter.exs", {:differs, diff}} =
                Enum.find(
-                 Check.run(@spek, fetcher),
+                 Check.run(spek, fetcher),
                  &match?({_, {:differs, _}}, &1)
                )
 
@@ -141,26 +159,24 @@ defmodule ElixirBaseline.CheckTest do
     end
 
     test "is ok when a patched file already holds the setting" do
-      fetcher = stub_all(@spek, %{".formatter.exs" => formatter(80)})
+      {spek, fetcher} = stub_all(@spek, %{".formatter.exs" => formatter(80)})
 
-      assert {".formatter.exs", :ok} in Check.run(@spek, fetcher)
+      assert {".formatter.exs", :ok} in Check.run(spek, fetcher)
     end
 
     test "reports a patched file it cannot parse as unpatchable" do
-      fetcher = stub_all(@spek, %{".formatter.exs" => "[\n"})
+      {spek, fetcher} = stub_all(@spek, %{".formatter.exs" => "[\n"})
 
       assert {".formatter.exs", {:unpatchable, _}} =
                Enum.find(
-                 Check.run(@spek, fetcher),
+                 Check.run(spek, fetcher),
                  &match?({_, {:unpatchable, _}}, &1)
                )
     end
 
     test "reports a patched file that does not exist as unpatchable" do
-      fetcher = fn _ -> {:error, {:http, 404, "Not Found"}} end
-
       assert [_credo, {".formatter.exs", {:unpatchable, reason}}] =
-               Check.run(@spek, fetcher)
+               Check.run(tree(@spek, []), unread())
 
       assert reason == "there is no file to patch"
     end
@@ -168,26 +184,26 @@ defmodule ElixirBaseline.CheckTest do
     test "is ok when a workflow is pinned newer than the template" do
       bumped = @workflow |> rendered(@ci) |> String.replace(@pin, @newer)
 
-      fetcher =
+      {workflow, fetcher} =
         stub_all(@workflow, %{
           @ci => bumped,
           @action => rendered(@workflow, @action)
         })
 
-      assert {@ci, :ok} in Check.run(@workflow, fetcher)
+      assert {@ci, :ok} in Check.run(workflow, fetcher)
     end
 
     test "is ok when a workflow is pinned to a tag rather than a digest" do
       unpinned =
         @workflow |> rendered(@ci) |> String.replace(@pin, "v7")
 
-      fetcher =
+      {workflow, fetcher} =
         stub_all(@workflow, %{
           @ci => unpinned,
           @action => rendered(@workflow, @action)
         })
 
-      assert {@ci, :ok} in Check.run(@workflow, fetcher)
+      assert {@ci, :ok} in Check.run(workflow, fetcher)
     end
 
     test "reports a workflow that differs in a step, pins included" do
@@ -200,14 +216,14 @@ defmodule ElixirBaseline.CheckTest do
           "persist-credentials: true"
         )
 
-      fetcher =
+      {workflow, fetcher} =
         stub_all(@workflow, %{
           @ci => changed,
           @action => rendered(@workflow, @action)
         })
 
       assert {@ci, {:differs, diff}} =
-               Enum.find(Check.run(@workflow, fetcher), &match?({@ci, _}, &1))
+               Enum.find(Check.run(workflow, fetcher), &match?({@ci, _}, &1))
 
       assert ElixirBaseline.Diff.counts(diff) == {2, 2}
     end
@@ -218,7 +234,7 @@ defmodule ElixirBaseline.CheckTest do
         |> rendered(@action)
         |> String.replace("5304e04ea2b355f03681464e683d92e3b2f18451", "aaaa111")
 
-      fetcher =
+      {workflow, fetcher} =
         stub_all(@workflow, %{
           @ci => rendered(@workflow, @ci),
           @action => bumped
@@ -226,7 +242,7 @@ defmodule ElixirBaseline.CheckTest do
 
       assert {@action, {:differs, _}} =
                Enum.find(
-                 Check.run(@workflow, fetcher),
+                 Check.run(workflow, fetcher),
                  &match?({@action, _}, &1)
                )
     end

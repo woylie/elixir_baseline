@@ -28,6 +28,13 @@ defmodule ElixirBaseline.Config do
     ],
     include: [type: {:list, :string}],
     exclude: [type: {:list, :string}],
+    conditions: [
+      type: {:map, :string, {:custom, __MODULE__, :validate_condition, []}},
+      doc: """
+      Condition a template has to meet to be generated, keyed by template \
+      name.\
+      """
+    ],
     extra: [type: :keyword_list]
   ]
 
@@ -207,6 +214,16 @@ defmodule ElixirBaseline.Config do
   end
 
   @doc false
+  @spec validate_condition(term) :: {:ok, tuple} | {:error, String.t()}
+  def validate_condition({:exists, path} = condition) when is_binary(path) do
+    {:ok, condition}
+  end
+
+  def validate_condition(other) do
+    {:error, "expected {:exists, path}, got: #{inspect(other)}"}
+  end
+
+  @doc false
   @spec validate_path(term) :: {:ok, String.t()} | {:error, String.t()}
   def validate_path(path) when is_binary(path) do
     if Path.type(path) == :relative and ".." not in Path.split(path) and
@@ -294,5 +311,6 @@ defmodule ElixirBaseline.Config do
   defp merge(base, override), do: Keyword.merge(base, override, &merge_option/3)
 
   defp merge_option(:extra, base, override), do: Keyword.merge(base, override)
+  defp merge_option(:conditions, base, override), do: Map.merge(base, override)
   defp merge_option(_option, _base, override), do: override
 end

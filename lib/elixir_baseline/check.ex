@@ -56,16 +56,23 @@ defmodule ElixirBaseline.Check do
   @spec ok?([{String.t(), finding}]) :: boolean
   def ok?(findings), do: Enum.all?(findings, &match?({_path, :ok}, &1))
 
+  defp fetch(%{error: reason}, _path, _fetcher), do: {:error, reason}
+
   defp fetch(spec, path, fetcher) do
+    if path in spec.tree do
+      read(spec, path, fetcher)
+    else
+      :missing
+    end
+  end
+
+  defp read(spec, path, fetcher) do
     case fetcher.("repos/#{Config.slug(spec)}/contents/#{path}") do
       {:ok, %{"content" => body}} ->
         {:ok, Base.decode64!(body, ignore: :whitespace)}
 
       {:ok, other} ->
         {:error, "unexpected response: #{inspect(other)}"}
-
-      {:error, {:http, 404, _}} ->
-        :missing
 
       {:error, reason} ->
         {:error, inspect(reason)}

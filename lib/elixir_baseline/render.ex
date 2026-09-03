@@ -10,6 +10,10 @@ defmodule ElixirBaseline.Render do
   A template ending in `.eex` is rendered with the resolved settings as assigns
   and loses the extension, and generates no file if it renders to nothing.
   Any other file is copied as it is.
+
+  A template named under `conditions` is generated only where the repo meets
+  its condition, so a repo opts in by holding the file the condition names
+  rather than by naming the template.
   """
 
   @scopes ["repo", "project"]
@@ -28,9 +32,10 @@ defmodule ElixirBaseline.Render do
   def files(repo) do
     selected!(repo)
 
-    projects = Enum.flat_map(repo.projects, &scope(&1, "project", &1.path))
+    projects =
+      Enum.flat_map(repo.projects, &scope(&1, "project", &1.path, repo.tree))
 
-    Map.new(scope(repo, "repo", ".") ++ projects)
+    Map.new(scope(repo, "repo", ".", repo.tree) ++ projects)
   end
 
   defp selected!(repo) do
@@ -44,8 +49,7 @@ defmodule ElixirBaseline.Render do
           do: Path.join(scope, relative)
 
     for settings <- levels,
-        option <- [:include, :exclude],
-        name <- Map.get(settings, option) || [],
+        {option, name} <- named(settings),
         name not in known do
       raise ArgumentError, """
       Unknown template in #{option} for repo #{repo.name}.
@@ -59,8 +63,21 @@ defmodule ElixirBaseline.Render do
     end
   end
 
-  defp scope(settings, scope, path) do
-    Enum.flat_map(selected(settings, scope), fn {relative, source} ->
+  defp named(settings) do
+    lists =
+      for option <- [:include, :exclude],
+          name <- Map.get(settings, option) || [],
+          do: {option, name}
+
+    conditions =
+      for name <- Map.keys(Map.get(settings, :conditions, %{})),
+          do: {:conditions, name}
+
+    lists ++ conditions
+  end
+
+  defp scope(settings, scope, path, tree) do
+    Enum.flat_map(selected(settings, scope, tree), fn {relative, source} ->
       contents = contents(source, relative, settings)
 
       if generated?(source, contents) do
@@ -75,9 +92,9 @@ defmodule ElixirBaseline.Render do
     not String.ends_with?(source, ".eex") or String.trim(contents) != ""
   end
 
-  defp selected(settings, scope) do
+  defp selected(settings, scope, tree) do
     Enum.filter(templates(settings, scope), fn {relative, _} ->
-      generate?(Path.join(scope, relative), settings)
+      generate?(Path.join(scope, relative), settings, tree)
     end)
   end
 
@@ -94,13 +111,17 @@ defmodule ElixirBaseline.Render do
     |> Enum.sort()
   end
 
-  defp generate?(template, settings) do
+  defp generate?(template, settings, tree) do
     included?(template, Map.get(settings, :include)) and
-      template not in Map.get(settings, :exclude, [])
+      template not in Map.get(settings, :exclude, []) and
+      holds?(Map.get(settings, :conditions, %{})[template], tree)
   end
 
   defp included?(_template, nil), do: true
   defp included?(template, include), do: template in include
+
+  defp holds?(nil, _tree), do: true
+  defp holds?({:exists, path}, tree), do: path in tree
 
   defp directory(:default) do
     Application.app_dir(:elixir_baseline, ["priv", "templates"])

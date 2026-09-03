@@ -17,7 +17,8 @@ The default templates include:
 - `renovate.json`
 - `SECURITY.md` (only generated for public repositories)
 - `.github/CODEOWNERS`
-- `.github/workflows/hadolint.yaml`
+- `.github/workflows/hadolint.yaml` (only generated for repositories with a
+  `Dockerfile`)
 - `.github/workflows/zizmor.yaml`
 
 Pinned hashes in Github Actions workflows are not overwritten from templates.
@@ -77,12 +78,14 @@ gitignored in this repository.
     all: [
       owner: "woylie",
       line_length: 80,
+      conditions: %{
+        "repo/.github/workflows/hadolint.yaml" => {:exists, "Dockerfile"}
+      },
       extra: [
         security_contacts: ["[Contact form](https://example.com/contact)"]
       ]
     ],
     library: [
-      exclude: ["repo/.github/workflows/hadolint.yaml"],
       extra: [renovate_presets: ["github>woylie/renovate-presets:library"]]
     ],
     application: [
@@ -174,3 +177,15 @@ The templates are in the `priv/templates` folder, split into `repo` and
 `project`. To use your own templates instead, list the directories under
 `templates`. `:default` in that list stands for the templates that ship with
 this tool.
+
+A template is referenced by its full relative path in the template folder,
+without the `.eex`. `include` and `exclude` options are supported. You can also
+set `conditions` that must be met for a template to be generated:
+
+```elixir
+conditions: %{
+  "repo/.github/workflows/hadolint.yaml" => {:exists, "Dockerfile"}
+}
+```
+
+The path in a condition is relative to the repository root.

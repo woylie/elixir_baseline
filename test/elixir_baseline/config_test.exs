@@ -259,6 +259,43 @@ defmodule ElixirBaseline.ConfigTest do
   end
 
   @tag :tmp_dir
+  test "resolves each condition on its own", %{tmp_dir: dir} do
+    manifest = [
+      defaults: [
+        all: [
+          owner: "a",
+          conditions: %{
+            "repo/hadolint" => {:exists, "Dockerfile"},
+            "repo/sobelow" => {:exists, "mix.exs"}
+          }
+        ]
+      ],
+      repos: [
+        r: [conditions: %{"repo/sobelow" => {:exists, "lib/web.ex"}}]
+      ]
+    ]
+
+    assert [%{conditions: conditions}] = repos(dir, manifest)
+
+    assert conditions == %{
+             "repo/hadolint" => {:exists, "Dockerfile"},
+             "repo/sobelow" => {:exists, "lib/web.ex"}
+           }
+  end
+
+  @tag :tmp_dir
+  test "rejects a condition it does not know", %{tmp_dir: dir} do
+    manifest = [
+      defaults: [all: [owner: "a"]],
+      repos: [r: [conditions: %{"repo/hadolint" => {:absent, "Dockerfile"}}]]
+    ]
+
+    assert_raise ArgumentError, ~r/expected \{:exists, path\}/, fn ->
+      repos(dir, manifest)
+    end
+  end
+
+  @tag :tmp_dir
   test "folds several groups in the order they are written", %{tmp_dir: dir} do
     manifest = [
       defaults: [

@@ -6,6 +6,9 @@
     all: [
       owner: "woylie",
       line_length: 80,
+      conditions: %{
+        "repo/.github/workflows/hadolint.yaml" => {:exists, "Dockerfile"}
+      },
       extra: [
         security_contacts: [
           "[Keybase](https://keybase.io/woylie)",
@@ -16,7 +19,6 @@
       ]
     ],
     library: [
-      exclude: ["repo/.github/workflows/hadolint.yaml"],
       extra: [renovate_presets: ["github>woylie/renovate-presets:library"]]
     ],
     application: [
