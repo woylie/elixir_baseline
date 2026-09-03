@@ -5,6 +5,7 @@ defmodule ElixirBaseline.Config do
 
   Lookup order:
 
+  - project configuration
   - repo configuration
   - group configuration
   - "all" group configuration
@@ -137,6 +138,13 @@ defmodule ElixirBaseline.Config do
 
   defp groups(spec), do: List.wrap(spec[:group])
 
+  defp groups(project, repo) do
+    case groups(project) do
+      [] -> groups(repo)
+      groups -> groups
+    end
+  end
+
   defp group!(spec, defaults, context) do
     Enum.each(groups(spec), fn group ->
       cond do
@@ -260,7 +268,8 @@ defmodule ElixirBaseline.Config do
   end
 
   defp repo(defaults, name, spec) do
-    settings = resolve(defaults, [], spec)
+    own = Keyword.delete(spec, :projects)
+    settings = collapse(levels(defaults, groups(spec), [own]))
 
     projects =
       for {project_name, project} <- projects(spec, name) do
@@ -268,7 +277,8 @@ defmodule ElixirBaseline.Config do
         path = Keyword.get(project, :path, to_string(project_name))
 
         defaults
-        |> resolve(Map.to_list(settings), project)
+        |> levels(groups(project, spec), [own, project])
+        |> collapse()
         |> Map.merge(%{name: name, path: path})
       end
 
@@ -300,19 +310,27 @@ defmodule ElixirBaseline.Config do
     end
   end
 
-  # `base` is the repo's resolved settings for a project, and empty for the
-  # repo itself, so both resolve through the same levels.
-  defp resolve(defaults, base, spec) do
-    spec = base |> merge(spec) |> Keyword.delete(:projects)
+  defp levels(defaults, groups, explicit) do
+    sources = [@defaults, defaults]
 
-    [@defaults, defaults]
-    |> Enum.flat_map(fn level ->
-      [level[:all] | Enum.map(groups(spec), &level[&1])]
-    end)
-    |> Enum.reject(&is_nil/1)
-    |> Enum.reduce([], &merge(&2, &1))
-    |> merge(spec)
-    |> Map.new()
+    all =
+      for level <- sources, settings = level[:all], not is_nil(settings) do
+        settings
+      end
+
+    grouped =
+      for group <- groups,
+          level <- sources,
+          settings = level[group],
+          not is_nil(settings) do
+        settings
+      end
+
+    all ++ grouped ++ explicit
+  end
+
+  defp collapse(levels) do
+    levels |> Enum.reduce([], &merge(&2, &1)) |> Map.new()
   end
 
   defp merge(base, override), do: Keyword.merge(base, override, &merge_option/3)

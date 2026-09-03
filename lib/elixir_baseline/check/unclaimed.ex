@@ -58,10 +58,19 @@ defmodule ElixirBaseline.Check.Unclaimed do
   defp directory(path, generated) do
     Enum.find_value(generated, fn relative ->
       cond do
+        template?(path, relative) -> nil
         path == relative -> "."
         String.ends_with?(path, "/" <> relative) -> parent(path, relative)
         true -> nil
       end
+    end)
+  end
+
+  defp template?(path, relative) do
+    Enum.any?(Render.scopes(), fn scope ->
+      suffix = "#{scope}/#{relative}"
+
+      path == suffix or String.ends_with?(path, "/" <> suffix)
     end)
   end
 

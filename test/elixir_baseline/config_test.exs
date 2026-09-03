@@ -109,6 +109,28 @@ defmodule ElixirBaseline.ConfigTest do
   end
 
   @tag :tmp_dir
+  test "reads a project's own group instead of the repo's", %{tmp_dir: dir} do
+    manifest = [
+      defaults: [
+        all: [owner: "acme"],
+        library: [exclude: ["project/.sobelow-conf"]],
+        application: []
+      ],
+      repos: [
+        lib: [
+          group: :library,
+          projects: [root: [path: "."], app: [group: :application]]
+        ]
+      ]
+    ]
+
+    assert [%{projects: [root, app]}] = repos(dir, manifest)
+
+    assert root.exclude == ["project/.sobelow-conf"]
+    refute Map.has_key?(app, :exclude)
+  end
+
+  @tag :tmp_dir
   test "puts a project in a directory named after it", %{tmp_dir: dir} do
     manifest = [
       defaults: [all: [owner: "a"]],

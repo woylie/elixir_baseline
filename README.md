@@ -124,6 +124,7 @@ gitignored in this repository.
 
 The lookup order of the repo settings is:
 
+- configuration under `projects`
 - configuration under `repos`
 - group configuration under `defaults`
 - "all" group configuration

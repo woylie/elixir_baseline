@@ -64,6 +64,23 @@ defmodule ElixirBaseline.Check.UnclaimedTest do
                Unclaimed.run(repo)
     end
 
+    test "ignores a repo's own template sources" do
+      paths = [
+        "mix.exs",
+        "priv/templates/project/.credo.exs",
+        "priv/templates/repo/.credo.exs",
+        "project/.credo.exs"
+      ]
+
+      assert Unclaimed.run(repo(paths)) == []
+    end
+
+    test "reports a directory whose name merely ends in a scope" do
+      repo = repo(["mix.exs", "subproject/.credo.exs"])
+
+      assert [{"subproject/.credo.exs", _}] = Unclaimed.run(repo)
+    end
+
     test "ignores a file no template generates" do
       assert Unclaimed.run(repo(["demo/README.md", "demo/credo.exs"])) == []
     end
