@@ -209,3 +209,13 @@ conditions: %{
 ```
 
 The path in a condition is relative to the repository root.
+
+`seed` lists the templates that are written once and then belong to the project:
+
+```elixir
+seed: ["project/.sobelow-conf"]
+```
+
+A seeded template is written if the file is missing and left alone if it is
+present. Every other template is owned: compared, and overwritten if it
+differs.

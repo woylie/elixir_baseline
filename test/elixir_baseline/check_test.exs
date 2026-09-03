@@ -25,12 +25,17 @@ defmodule ElixirBaseline.CheckTest do
   @nested %{@spek | projects: [@root, @demo]}
   @workflow %{@project | templates: @workflows}
 
+  @seeds [Path.expand("../support/seed_templates", __DIR__)]
+  @seed ["project/.sobelow-conf"]
+
   @ci ".github/workflows/ci.yaml"
   @action ".github/actions/setup/action.yaml"
   @pin "3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1"
   @newer "c2b5f1a0e4d3927f6a8b1c0d5e4f3a2b1c0d9e8f # v7.1.0"
 
-  defp rendered(spec, path), do: spec |> Render.files() |> Map.fetch!(path)
+  defp rendered(spec, path) do
+    spec |> Render.files() |> Map.merge(Render.seeds(spec)) |> Map.fetch!(path)
+  end
 
   defp formatter(length) do
     """
@@ -48,6 +53,12 @@ defmodule ElixirBaseline.CheckTest do
   end
 
   defp tree(spec, paths), do: %{spec | tree: MapSet.new(paths)}
+
+  defp seeded do
+    project = Map.merge(@project, %{templates: @seeds, seed: @seed})
+
+    %{project | projects: [project]}
+  end
 
   defp unread, do: fn path -> flunk("read #{path}") end
 
@@ -144,6 +155,29 @@ defmodule ElixirBaseline.CheckTest do
                {"demo/.credo.exs", {:missing, _}},
                {"demo/.formatter.exs", :ok}
              ] = Check.run(nested, fetcher)
+    end
+
+    test "is ok when a seeded file is there, without reading it" do
+      {spec, fetcher} = stub_all(seeded(), %{})
+      spec = tree(spec, [".formatter.exs", ".sobelow-conf"])
+
+      guarded = fn
+        "repos/acme/spek/contents/.sobelow-conf" -> flunk("read the seed")
+        path -> fetcher.(path)
+      end
+
+      assert {".sobelow-conf", :ok} in Check.run(spec, guarded)
+    end
+
+    test "holds what a missing seeded file would start from" do
+      seeded = seeded()
+
+      findings = Check.run(tree(seeded, []), unread())
+
+      assert {".sobelow-conf", {:missing, expected}} =
+               Enum.find(findings, &match?({".sobelow-conf", _}, &1))
+
+      assert expected == rendered(seeded, ".sobelow-conf")
     end
 
     test "reports a patched file whose setting differs" do

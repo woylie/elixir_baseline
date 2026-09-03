@@ -79,8 +79,9 @@ defmodule Mix.Tasks.Baseline.Check do
     specs
     |> Enum.flat_map(fn spec ->
       generated = spec |> Render.files() |> Map.keys()
+      seeded = spec |> Render.seeds() |> Map.keys()
       unclaimed = for {path, _finding} <- Unclaimed.run(spec), do: path
-      labels = generated ++ unclaimed ++ Settings.labels()
+      labels = generated ++ seeded ++ unclaimed ++ Settings.labels()
 
       [Config.slug(spec) | Enum.map(labels, &(@indent <> &1))]
     end)

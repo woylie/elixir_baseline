@@ -9,7 +9,7 @@ defmodule ElixirBaseline.Check.Settings do
   Takes a spec `ElixirBaseline.Repository` has resolved.
 
   Each check states its own remedy, because a setting cannot be fixed by
-  re-running a task and where to change it differs per setting.
+  re-running a task and the place to change it differs per setting.
 
   A setting that does not exist on a repo is `:skipped`, never drift. All three
   are public-only.

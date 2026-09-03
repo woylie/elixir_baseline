@@ -283,8 +283,71 @@ defmodule ElixirBaseline.RenderTest do
       assert Map.keys(Render.files(spec)) == ["demo/.tool-versions"]
     end
 
+    @tag :tmp_dir
+    test "keeps a seeded template out of the owned files", %{tmp_dir: dir} do
+      template!(dir, "project/.sobelow-conf", "[verbose: false]\n")
+      template!(dir, "project/.tool-versions", "elixir 1.20\n")
+      seed = ["project/.sobelow-conf"]
+
+      spec =
+        repo([project(templates: [dir], seed: seed)],
+          templates: [dir],
+          seed: seed
+        )
+
+      assert Map.keys(Render.files(spec)) == [".tool-versions"]
+      assert Render.seeds(spec) == %{".sobelow-conf" => "[verbose: false]\n"}
+    end
+
+    @tag :tmp_dir
+    test "seeds a project template under each project's path",
+         %{tmp_dir: dir} do
+      template!(dir, "project/.sobelow-conf", "[verbose: false]\n")
+      seed = ["project/.sobelow-conf"]
+
+      spec =
+        repo(
+          [
+            project(templates: [dir], seed: seed),
+            project(path: "demo", templates: [dir], seed: seed)
+          ],
+          templates: [dir],
+          seed: seed
+        )
+
+      assert Enum.sort(Map.keys(Render.seeds(spec))) ==
+               [".sobelow-conf", "demo/.sobelow-conf"]
+
+      assert Render.files(spec) == %{}
+    end
+
+    @tag :tmp_dir
+    test "leaves a template nothing seeds out of the seeded files",
+         %{tmp_dir: dir} do
+      template!(dir, "project/.tool-versions", "elixir 1.20\n")
+
+      spec = repo([project(templates: [dir])], templates: [dir])
+
+      assert Render.seeds(spec) == %{}
+    end
+
+    @tag :tmp_dir
+    test "applies exclude to a seeded template too", %{tmp_dir: dir} do
+      template!(dir, "project/.sobelow-conf", "[verbose: false]\n")
+      names = ["project/.sobelow-conf"]
+
+      spec =
+        repo([project(templates: [dir], seed: names, exclude: names)],
+          templates: [dir],
+          seed: names,
+          exclude: names
+        )
+
+      assert Render.seeds(spec) == %{}
+    end
+
     test "rejects a selected template that does not exist" do
-      for option <- [:include, :exclude] do
+      for option <- [:include, :exclude, :seed] do
         spec = repo([project([{option, ["project/nope"]}])])
 
         assert_raise ArgumentError, ~r/Unknown template in #{option}/, fn ->

@@ -28,6 +28,13 @@ defmodule ElixirBaseline.Config do
     ],
     include: [type: {:list, :string}],
     exclude: [type: {:list, :string}],
+    seed: [
+      type: {:list, :string},
+      doc: """
+      Templates written once and then owned by the project, rather than \
+      compared and overwritten.\
+      """
+    ],
     conditions: [
       type: {:map, :string, {:custom, __MODULE__, :validate_condition, []}},
       doc: """

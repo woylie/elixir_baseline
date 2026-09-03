@@ -26,6 +26,9 @@ defmodule ElixirBaseline.Check do
   template renders, and a differing one holds the difference, so that neither
   has to be read a second time.
 
+  A seeded file is only ever missing or `:ok`: once it exists it belongs to the
+  project, so its contents are never read.
+
   `fetcher` takes a REST path and returns what `GH.get/1` returns.
   """
   @spec run(map, (String.t() -> GH.result())) :: [{String.t(), finding}]
@@ -34,7 +37,7 @@ defmodule ElixirBaseline.Check do
     |> targets()
     |> Enum.sort()
     |> Enum.map(fn {path, target} ->
-      {path, compare(path, fetch(spec, path, fetcher), target)}
+      {path, compare(path, fetch(spec, path, target, fetcher), target)}
     end)
   end
 
@@ -43,11 +46,15 @@ defmodule ElixirBaseline.Check do
       for {path, expected} <- Render.files(spec),
           do: {path, {:generated, expected}}
 
+    seeded =
+      for {path, expected} <- Render.seeds(spec),
+          do: {path, {:seeded, expected}}
+
     patched =
       for {path, patches} <- Patch.files(spec),
           do: {path, {:patched, patches}}
 
-    generated ++ patched
+    generated ++ seeded ++ patched
   end
 
   @doc """
@@ -56,15 +63,18 @@ defmodule ElixirBaseline.Check do
   @spec ok?([{String.t(), finding}]) :: boolean
   def ok?(findings), do: Enum.all?(findings, &match?({_path, :ok}, &1))
 
-  defp fetch(%{error: reason}, _path, _fetcher), do: {:error, reason}
+  defp fetch(%{error: reason}, _path, _target, _fetcher), do: {:error, reason}
 
-  defp fetch(spec, path, fetcher) do
-    if path in spec.tree do
-      read(spec, path, fetcher)
-    else
-      :missing
+  defp fetch(spec, path, target, fetcher) do
+    cond do
+      path not in spec.tree -> :missing
+      seeded?(target) -> :present
+      true -> read(spec, path, fetcher)
     end
   end
+
+  defp seeded?({:seeded, _expected}), do: true
+  defp seeded?(_target), do: false
 
   defp read(spec, path, fetcher) do
     case fetcher.("repos/#{Config.slug(spec)}/contents/#{path}") do
@@ -86,6 +96,10 @@ defmodule ElixirBaseline.Check do
       {:differs, Diff.lines(actual, expected)}
     end
   end
+
+  defp compare(_path, :present, {:seeded, _expected}), do: :ok
+
+  defp compare(_path, :missing, {:seeded, expected}), do: {:missing, expected}
 
   defp compare(_path, {:ok, actual}, {:patched, patches}) do
     case Patch.apply(patches, actual) do

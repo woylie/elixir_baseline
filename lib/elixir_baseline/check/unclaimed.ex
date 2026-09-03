@@ -16,8 +16,8 @@ defmodule ElixirBaseline.Check.Unclaimed do
 
   @type finding :: {:drift, state :: String.t(), remedy :: String.t()}
 
-  # Every Mix project has one, so an unenrolled project is found even where it
-  # has none of the generated files yet.
+  # Every Mix project has one, so an unenrolled project is found even if it has
+  # none of the generated files yet.
   @manifest "mix.exs"
 
   @doc """
@@ -53,7 +53,7 @@ defmodule ElixirBaseline.Check.Unclaimed do
         do: relative
   end
 
-  # The directory the file would be a project's own, or nil where it is not a
+  # The directory the file would be a project's own, or nil if it is not a
   # generated name at all.
   defp directory(path, generated) do
     Enum.find_value(generated, fn relative ->

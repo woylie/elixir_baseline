@@ -11,9 +11,13 @@ defmodule ElixirBaseline.Render do
   and loses the extension, and generates no file if it renders to nothing.
   Any other file is copied as it is.
 
-  A template named under `conditions` is generated only where the repo meets
+  A template named under `conditions` is generated only for a repo that meets
   its condition, so a repo opts in by holding the file the condition names
   rather than by naming the template.
+
+  A template named under `seed` is written once and then belongs to the
+  project. `files/1` returns the templates this tool owns and compares, and
+  `seeds/1` the seeded ones, which are written only if there is no file yet.
   """
 
   @scopes ["repo", "project"]
@@ -37,17 +41,33 @@ defmodule ElixirBaseline.Render do
   end
 
   @doc """
-  Returns every generated file of a resolved repo, keyed by its path in that
-  repo.
+  Returns every owned file of a resolved repo, keyed by its path in that repo.
+
+  An owned file is compared against the template and overwritten if it
+  differs.
   """
   @spec files(map) :: %{String.t() => String.t()}
-  def files(repo) do
+  def files(repo), do: rendered(repo, :owned)
+
+  @doc """
+  Returns every seeded file of a resolved repo, keyed by its path in that repo.
+
+  A seeded file is written if there is none and left alone after that, so its
+  contents are what the repo starts from rather than what it has to match.
+  """
+  @spec seeds(map) :: %{String.t() => String.t()}
+  def seeds(repo), do: rendered(repo, :seeded)
+
+  defp rendered(repo, mode) do
     selected!(repo)
 
     projects =
-      Enum.flat_map(repo.projects, &scope(&1, "project", &1.path, repo.tree))
+      Enum.flat_map(
+        repo.projects,
+        &scope(&1, "project", &1.path, repo.tree, mode)
+      )
 
-    Map.new(scope(repo, "repo", ".", repo.tree) ++ projects)
+    Map.new(scope(repo, "repo", ".", repo.tree, mode) ++ projects)
   end
 
   defp selected!(repo) do
@@ -77,7 +97,7 @@ defmodule ElixirBaseline.Render do
 
   defp named(settings) do
     lists =
-      for option <- [:include, :exclude],
+      for option <- [:include, :exclude, :seed],
           name <- Map.get(settings, option) || [],
           do: {option, name}
 
@@ -88,8 +108,10 @@ defmodule ElixirBaseline.Render do
     lists ++ conditions
   end
 
-  defp scope(settings, scope, path, tree) do
-    Enum.flat_map(selected(settings, scope, tree), fn {relative, source} ->
+  defp scope(settings, scope, path, tree, mode) do
+    settings
+    |> selected(scope, tree, mode)
+    |> Enum.flat_map(fn {relative, source} ->
       contents = contents(source, relative, settings)
 
       if generated?(source, contents) do
@@ -104,10 +126,16 @@ defmodule ElixirBaseline.Render do
     not String.ends_with?(source, ".eex") or String.trim(contents) != ""
   end
 
-  defp selected(settings, scope, tree) do
+  defp selected(settings, scope, tree, mode) do
     Enum.filter(templates(settings, scope), fn {relative, _} ->
-      generate?(Path.join(scope, relative), settings, tree)
+      template = Path.join(scope, relative)
+
+      generate?(template, settings, tree) and mode(template, settings) == mode
     end)
+  end
+
+  defp mode(template, settings) do
+    if template in Map.get(settings, :seed, []), do: :seeded, else: :owned
   end
 
   defp templates(settings, scope) do

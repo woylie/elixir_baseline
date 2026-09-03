@@ -223,6 +223,7 @@ defmodule Mix.Tasks.Baseline.Pr do
   defp update(spec, declined) do
     dir = Path.join(System.tmp_dir!(), "baseline-#{spec.name}-#{unique()}")
     files = spec |> Render.files() |> Map.drop(declined)
+    seeds = spec |> Render.seeds() |> Map.drop(declined)
     patches = spec |> Patch.files() |> Map.drop(declined)
 
     try do
@@ -230,10 +231,24 @@ defmodule Mix.Tasks.Baseline.Pr do
       clone!(spec, dir)
       start_branch(dir)
       write!(dir, files)
-      publish(dir, Map.keys(files) ++ patch!(dir, patches))
+      publish(dir, Map.keys(files) ++ seed!(dir, seeds) ++ patch!(dir, patches))
     after
       File.rm_rf!(dir)
     end
+  end
+
+  # A seeded file belongs to the project once it exists, so the clone decides:
+  # what is already there is left as it is, whatever it holds.
+  defp seed!(dir, seeds) do
+    missing =
+      for {path, contents} <- seeds,
+          not File.exists?(Path.join(dir, path)),
+          into: %{},
+          do: {path, contents}
+
+    write!(dir, missing)
+
+    Map.keys(missing)
   end
 
   defp patch!(dir, patches) do
