@@ -2,7 +2,7 @@
 
 Tool for sharing tooling configuration between Elixir repos. Detects drift from
 a baseline configuration and opens pull requests to fix it, and reports the
-GitHub settings a pull request cannot fix.
+GitHub settings and the unenrolled projects a pull request cannot fix.
 
 ## Features
 
@@ -41,6 +41,21 @@ Currently supported checks:
 - `SECURITY.md` exists in either the repo or inherited from the owner's
   `.github` repo (only public repositories).
 - Private vulnerability reporting is enabled (only public repositories).
+
+### Unclaimed files
+
+The drift check only looks at the paths the configuration expects, so a Mix
+project that is not listed under `projects` is invisible to it and its
+repository reads as fully covered.
+
+The unclaimed check searches the other way. It goes over every path in the
+repository and reports a `mix.exs`, or a file one of the project templates
+generates, sitting in a directory that no configured project claims. That
+catches a project dropped from the configuration by mistake, and a nested
+application that was added to a repository but never enrolled.
+
+An unclaimed file is fixed in the configuration rather than by a pull request,
+so it is counted separately.
 
 ## Requirements
 

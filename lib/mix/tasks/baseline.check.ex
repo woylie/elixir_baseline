@@ -3,10 +3,11 @@ defmodule Mix.Tasks.Baseline.Check do
 
   @moduledoc """
   Reports whether the files each enrolled repo generates match its templates,
-  and whether its GitHub settings match the baseline.
+  whether its GitHub settings match the baseline, and whether it holds a
+  project the config does not enroll.
 
   A drifted file is fixed by `mix baseline.pr`. A drifted setting is changed in
-  GitHub, so the two are counted apart.
+  GitHub and an unclaimed file in the config, so the three are counted apart.
 
   ## Command line options
 
@@ -18,6 +19,7 @@ defmodule Mix.Tasks.Baseline.Check do
 
   alias ElixirBaseline.Check
   alias ElixirBaseline.Check.Settings
+  alias ElixirBaseline.Check.Unclaimed
   alias ElixirBaseline.Config
   alias ElixirBaseline.Diff
   alias ElixirBaseline.Options
@@ -44,13 +46,14 @@ defmodule Mix.Tasks.Baseline.Check do
 
     results =
       specs
-      |> Task.async_stream(&{&1, Check.run(&1), Settings.run(&1)},
+      |> Task.async_stream(
+        &{&1, Check.run(&1), Settings.run(&1), Unclaimed.run(&1)},
         ordered: true,
         max_concurrency: @concurrency,
         timeout: :infinity
       )
-      |> Enum.map(fn {:ok, {spec, files, settings} = result} ->
-        report(spec, files ++ settings, width)
+      |> Enum.map(fn {:ok, {spec, files, settings, unclaimed} = result} ->
+        report(spec, files ++ settings ++ unclaimed, width)
         result
       end)
 
@@ -75,12 +78,11 @@ defmodule Mix.Tasks.Baseline.Check do
   defp width(specs) do
     specs
     |> Enum.flat_map(fn spec ->
-      paths = spec |> Render.files() |> Map.keys()
+      generated = spec |> Render.files() |> Map.keys()
+      unclaimed = for {path, _finding} <- Unclaimed.run(spec), do: path
+      labels = generated ++ unclaimed ++ Settings.labels()
 
-      [
-        Config.slug(spec)
-        | Enum.map(paths ++ Settings.labels(), &(@indent <> &1))
-      ]
+      [Config.slug(spec) | Enum.map(labels, &(@indent <> &1))]
     end)
     |> Enum.map(&String.length/1)
     |> Enum.max()
@@ -113,21 +115,29 @@ defmodule Mix.Tasks.Baseline.Check do
   defp describe({:drift, state, _remedy}), do: state
 
   defp summarise(results) do
-    files = Enum.flat_map(results, fn {_spec, files, _settings} -> files end)
-
-    settings =
-      Enum.flat_map(results, fn {_spec, _files, settings} -> settings end)
-
-    lead = if drifted(files) + drifted(settings) == 0, do: "", else: "\n"
+    files = collect(results, 1)
+    settings = collect(results, 2)
+    unclaimed = collect(results, 3)
+    lead = if drifted(files ++ settings ++ unclaimed) == 0, do: "", else: "\n"
 
     Mix.shell().info(
       lead <>
         tally("files", files) <>
-        "\n" <> tally("settings", settings) <> hint(files)
+        "\n" <>
+        tally("settings", settings) <> orphans(unclaimed) <> hint(files)
     )
 
-    raise_drift(files, settings)
+    raise_drift(files, settings, unclaimed)
   end
+
+  defp collect(results, index) do
+    Enum.flat_map(results, &elem(&1, index))
+  end
+
+  # No denominator: an unclaimed file is a finding rather than one of a known
+  # set, so a count of nothing says nothing.
+  defp orphans([]), do: ""
+  defp orphans(unclaimed), do: "\n#{length(unclaimed)} unclaimed file(s)."
 
   defp drifted(findings), do: Enum.count(findings, &(not quiet?(&1)))
 
@@ -139,9 +149,13 @@ defmodule Mix.Tasks.Baseline.Check do
     end
   end
 
-  defp raise_drift(files, settings) do
+  defp raise_drift(files, settings, unclaimed) do
     parts =
-      [{"file", drifted(files)}, {"setting", drifted(settings)}]
+      [
+        {"file", drifted(files)},
+        {"setting", drifted(settings)},
+        {"unclaimed file", drifted(unclaimed)}
+      ]
       |> Enum.reject(fn {_kind, count} -> count == 0 end)
       |> Enum.map(fn {kind, count} -> "#{count} #{kind}(s)" end)
 

@@ -25,6 +25,18 @@ defmodule ElixirBaseline.Render do
   def scopes, do: @scopes
 
   @doc """
+  Returns the path every project template takes under its project, whatever
+  `include`, `exclude` and `conditions` select.
+
+  The check for a project nobody configured looks for the names this tool
+  would generate rather than the ones it does.
+  """
+  @spec project_paths(map) :: [String.t()]
+  def project_paths(settings) do
+    for {relative, _source} <- templates(settings, "project"), do: relative
+  end
+
+  @doc """
   Returns every generated file of a resolved repo, keyed by its path in that
   repo.
   """
