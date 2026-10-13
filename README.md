@@ -19,6 +19,7 @@ The default templates include:
 - `.github/CODEOWNERS`
 - `.github/workflows/hadolint.yaml` (only generated for repositories with a
   `Dockerfile`)
+- `.github/workflows/llm-attribution.yaml`
 - `.github/workflows/zizmor.yaml`
 
 Pinned hashes in Github Actions workflows are not overwritten from templates.
